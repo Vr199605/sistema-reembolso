@@ -145,51 +145,56 @@ with aba_guia:
 with aba_solicitacao:
     st.title("🚀 Solicitação de Reembolso de Despesas")
     st.markdown("---")
-    col_perfil1, col_perfil2 = st.columns(2)
-    with col_perfil1: nome = st.text_input("Nome completo", key="nome_user")
-    with col_perfil2: data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
+    
+    # Criando o formulário que limpa ao enviar
+    with st.form("form_solicitacao", clear_on_submit=True):
+        col_perfil1, col_perfil2 = st.columns(2)
+        with col_perfil1: nome = st.text_input("Nome completo", key="nome_user")
+        with col_perfil2: data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
 
-    categorias_disponiveis = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
-    selecionadas = st.multiselect("Selecione as categorias:", categorias_disponiveis)
-    dados_despesas = []
+        categorias_disponiveis = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
+        selecionadas = st.multiselect("Selecione as categorias:", categorias_disponiveis)
+        dados_despesas = []
 
-    if selecionadas:
-        for cat in selecionadas:
-            with st.container():
-                c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
-                c1.markdown(f"**{cat}**")
-                d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}")
-                if "KM (em qtde)" in cat:
-                    q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}")
-                    v_fin = (q_km * 1.37) if q_km else 0.0
-                    if q_km: c3.info(f"R$ {v_fin:.2f}")
-                else:
-                    v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}")
-                    if "REFEIÇÃO" in cat: 
-                        c3.markdown("**Limite até R$ 150**")
-                    elif "ESTACIONAMENTO" in cat: 
-                        c3.markdown("**Limite até R$ 70**")
-                    v_fin = v_fin if v_fin else 0.0
-                mot = c4.text_input("Motivo *", key=f"m_{cat}")
-                dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": v_fin, "Motivo": mot})
+        if selecionadas:
+            for cat in selecionadas:
+                with st.container():
+                    c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
+                    c1.markdown(f"**{cat}**")
+                    d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}")
+                    if "KM (em qtde)" in cat:
+                        q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}")
+                        v_fin = (q_km * 1.37) if q_km else 0.0
+                        if q_km: c3.info(f"R$ {v_fin:.2f}")
+                    else:
+                        v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}")
+                        if "REFEIÇÃO" in cat: 
+                            c3.markdown("**Limite até R$ 150**")
+                        elif "ESTACIONAMENTO" in cat: 
+                            c3.markdown("**Limite até R$ 70**")
+                        v_fin = v_fin if v_fin else 0.0
+                    mot = c4.text_input("Motivo *", key=f"m_{cat}")
+                    dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": v_fin, "Motivo": mot})
         
         st.subheader("Anexar Comprovantes")
         arq = st.file_uploader("Upload (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
 
-        if st.button("Enviar Solicitação"):
+        botao_enviar = st.form_submit_button("Enviar Solicitação")
+
+        if botao_enviar:
             if any(not d["Motivo"].strip() for d in dados_despesas) or not arq:
                 st.error("Preencha todos os motivos e anexe os arquivos.")
             else:
                 st.session_state['solicitacao'] = {"nome": nome, "data": data_solicitacao.strftime('%d/%m/%Y'), "itens": dados_despesas}
-                enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso.")
+                enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"Solicitação: {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso.")
                 st.success("Enviado! Gabriel Coelho foi notificado.")
-                st.warning("Aguarde o reset dos campos...")
-                time.sleep(3) # Aguarda 3 segundos para o usuário ler a mensagem
-                st.rerun() # Recarrega a página e limpa todos os campos
+                st.warning("Os campos foram resetados para uma nova solicitação.")
+                time.sleep(2)
+                st.rerun()
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
-    if st.text_input("Senha", type="password") == "globus2026":
+    if st.text_input("Senha", type="password") == "12345":
         if 'solicitacao' in st.session_state:
             sol = st.session_state['solicitacao']
             st.subheader(f"Ajuste de Solicitação: {sol['nome']}")
@@ -224,7 +229,7 @@ with aba_aprovacao:
                 
                 # 2. Gerar PDF e Enviar E-mail
                 pdf = gerar_pdf(sol['nome'], sol['data'], dados_ajustados, total_adj)
-                enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {sol['nome']}", "Seguem os dados aprovados.", pdf)
+                enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"APROVADO - {sol['nome']}", "Seguem os dados aprovados.", pdf)
                 st.success("Aprovado! Dados salvos na planilha e PDF enviado!")
                 
             if st.button("❌ Reprovar"): st.error("Reprovada.")
