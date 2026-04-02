@@ -180,7 +180,7 @@ with aba_solicitacao:
                         updated_p = pd.concat([existing_p, df_pendente], ignore_index=True)
                         conn.update(worksheet="Pendentes", data=updated_p)
                         
-                        enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"Solicitação de {nome}", f"Nova solicitação enviada. Verifique a aba de Aprovação.")
+                        enviar_email_com_pdf("gabriel.coelho@globussseguros.com.br", f"Solicitação de {nome}", f"Nova solicitação enviada. Verifique a aba de Aprovação.")
                         st.success("Enviado! Gabriel Coelho foi notificado.")
                         time.sleep(2)
                         reset_campos()
@@ -190,7 +190,7 @@ with aba_solicitacao:
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
-    if st.text_input("Senha", type="password") == "12345":
+    if st.text_input("Senha", type="password") == "globus2026":
         # BUSCA DADOS DIRETO DA PLANILHA PARA GABRIEL VER EM OUTRO PC
         try:
             df_pendentes = conn.read(worksheet="Pendentes", ttl=0) # ttl=0 garante que ele busque o dado mais novo
@@ -231,7 +231,7 @@ with aba_aprovacao:
                         
                         # 3. PDF e E-mail
                         pdf = gerar_pdf(colab_sel, data_sol_original, dados_ajustados, total_adj)
-                        enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"APROVADO - {colab_sel}", "Dados aprovados.", pdf)
+                        enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Dados aprovados.", pdf)
                         st.success("Aprovado com sucesso!")
                         time.sleep(2)
                         st.rerun()
