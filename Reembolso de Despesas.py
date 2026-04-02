@@ -171,33 +171,37 @@ with aba_solicitacao:
                 if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or not nome:
                     st.error("Preencha o nome, motivos e anexe os arquivos.")
                 else:
-                    # SALVA NA ABA PENDENTES (Para o Gabriel ver de outro PC)
+                    # SALVA NA ABA PENDENTES (Fundamental para funcionar em computadores diferentes)
                     df_pendente = pd.DataFrame(dados_despesas)
                     df_pendente['Colaborador'] = nome
                     df_pendente['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
                     try:
-                        existing_pendentes = conn.read(worksheet="Pendentes")
-                        updated_pendentes = pd.concat([existing_pendentes, df_pendente], ignore_index=True)
-                        conn.update(worksheet="Pendentes", data=updated_pendentes)
-                        enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"Solicitação de {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso. Verifique na aba de Aprovação.")
+                        existing_p = conn.read(worksheet="Pendentes")
+                        updated_p = pd.concat([existing_p, df_pendente], ignore_index=True)
+                        conn.update(worksheet="Pendentes", data=updated_p)
+                        
+                        enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"Solicitação de {nome}", f"Nova solicitação enviada. Verifique a aba de Aprovação.")
                         st.success("Enviado! Gabriel Coelho foi notificado.")
                         time.sleep(2)
                         reset_campos()
-                    except Exception as e: st.error(f"Erro ao salvar: {e}")
+                    except Exception as e: st.error(f"Erro ao salvar na planilha: {e}")
         with col_btn2:
             if st.button("🗑️ Limpar Tudo", use_container_width=True): reset_campos()
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
     if st.text_input("Senha", type="password") == "12345":
+        # BUSCA DADOS DIRETO DA PLANILHA PARA GABRIEL VER EM OUTRO PC
         try:
-            df_pendentes = conn.read(worksheet="Pendentes")
+            df_pendentes = conn.read(worksheet="Pendentes", ttl=0) # ttl=0 garante que ele busque o dado mais novo
             if not df_pendentes.empty:
                 colaboradores = df_pendentes['Colaborador'].unique()
-                colab_sel = st.selectbox("Selecione a solicitação para analisar:", colaboradores)
+                colab_sel = st.selectbox("Selecione o colaborador para aprovar:", colaboradores)
                 
                 dados_filtrados = df_pendentes[df_pendentes['Colaborador'] == colab_sel]
-                st.subheader(f"Analisando: {colab_sel}")
+                data_sol_original = dados_filtrados.iloc[0]['Data Solicitacao']
+                
+                st.subheader(f"Solicitação de: {colab_sel}")
                 
                 dados_ajustados = []
                 for i, row in dados_filtrados.iterrows():
@@ -214,30 +218,32 @@ with aba_aprovacao:
 
                 if st.button("✅ Aprovar e Enviar PDF"):
                     try:
-                        # 1. Salvar na aba oficial Reembolsos
-                        df_oficial = pd.DataFrame(dados_ajustados)
-                        df_oficial['Colaborador'] = colab_sel
-                        df_oficial['Data Solicitacao'] = dados_filtrados.iloc[0]['Data Solicitacao']
+                        # 1. Salva na Reembolsos
+                        df_final = pd.DataFrame(dados_ajustados)
+                        df_final['Colaborador'] = colab_sel
+                        df_final['Data Solicitacao'] = data_sol_original
                         existing_oficial = conn.read(worksheet="Reembolsos")
-                        conn.update(worksheet="Reembolsos", data=pd.concat([existing_oficial, df_oficial], ignore_index=True))
+                        conn.update(worksheet="Reembolsos", data=pd.concat([existing_oficial, df_final], ignore_index=True))
                         
-                        # 2. Limpar da aba Pendentes
-                        df_remanescente = df_pendentes[df_pendentes['Colaborador'] != colab_sel]
-                        conn.update(worksheet="Pendentes", data=df_remanescente)
+                        # 2. Remove da Pendentes
+                        df_limpo = df_pendentes[df_pendentes['Colaborador'] != colab_sel]
+                        conn.update(worksheet="Pendentes", data=df_limpo)
                         
-                        # 3. Enviar PDF
-                        pdf = gerar_pdf(colab_sel, df_oficial['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
-                        enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"APROVADO - {colab_sel}", "Seu reembolso foi aprovado.", pdf)
-                        st.success("Aprovado e removido da lista de pendências!")
+                        # 3. PDF e E-mail
+                        pdf = gerar_pdf(colab_sel, data_sol_original, dados_ajustados, total_adj)
+                        enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"APROVADO - {colab_sel}", "Dados aprovados.", pdf)
+                        st.success("Aprovado com sucesso!")
                         time.sleep(2)
                         st.rerun()
                     except Exception as e: st.error(f"Erro: {e}")
                 
                 if st.button("❌ Reprovar"):
-                    df_remanescente = df_pendentes[df_pendentes['Colaborador'] != colab_sel]
-                    conn.update(worksheet="Pendentes", data=df_remanescente)
-                    st.error("Solicitação reprovada e removida.")
+                    df_limpo = df_pendentes[df_pendentes['Colaborador'] != colab_sel]
+                    conn.update(worksheet="Pendentes", data=df_limpo)
+                    st.error("Removido da lista.")
                     time.sleep(2)
                     st.rerun()
-            else: st.info("Não há solicitações pendentes.")
-        except: st.info("Nenhuma solicitação encontrada na planilha 'Pendentes'.")
+            else:
+                st.info("Não há solicitações pendentes para aprovação.")
+        except:
+            st.info("Aguardando novas solicitações na planilha...")
