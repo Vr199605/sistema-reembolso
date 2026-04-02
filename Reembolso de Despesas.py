@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from streamlit_gsheets import GSheetsConnection
+import time
 
 # ReportLab para o layout
 from reportlab.lib.pagesizes import A4
@@ -182,7 +183,9 @@ with aba_solicitacao:
                 st.session_state['solicitacao'] = {"nome": nome, "data": data_solicitacao.strftime('%d/%m/%Y'), "itens": dados_despesas}
                 enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso.")
                 st.success("Enviado! Gabriel Coelho foi notificado.")
-                st.warning("Você só receberá dentro do limite das politicas.")
+                st.warning("Aguarde o reset dos campos...")
+                time.sleep(3) # Aguarda 3 segundos para o usuário ler a mensagem
+                st.rerun() # Recarrega a página e limpa todos os campos
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
@@ -211,7 +214,7 @@ with aba_aprovacao:
                     df_final['Colaborador'] = sol['nome']
                     df_final['Data Solicitacao'] = sol['data']
                     
-                    # CORREÇÃO: Lê os dados existentes e anexa os novos
+                    # Lê os dados existentes e anexa os novos
                     existing_data = conn.read(worksheet="Reembolsos")
                     updated_df = pd.concat([existing_data, df_final], ignore_index=True)
                     conn.update(worksheet="Reembolsos", data=updated_df)
