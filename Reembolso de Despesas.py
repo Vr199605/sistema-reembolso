@@ -90,6 +90,12 @@ def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None):
         return True
     except: return False
 
+# --- FUNÇÃO DE RESET ---
+def reset_campos():
+    for key in st.session_state.keys():
+        del st.session_state[key]
+    st.rerun()
+
 # --- INTERFACE ---
 aba_guia, aba_solicitacao, aba_aprovacao = st.tabs(["📖 Guia Passo a Passo", "📋 Solicitação", "🔐 Aprovação (Gabriel Coelho)"])
 
@@ -186,17 +192,17 @@ with aba_solicitacao:
                     st.session_state['solicitacao'] = {"nome": nome, "data": data_solicitacao.strftime('%d/%m/%Y'), "itens": dados_despesas}
                     enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso.")
                     st.success("Enviado! Gabriel Coelho foi notificado.")
-                    st.warning("Aguarde o reset dos campos...")
-                    time.sleep(3) 
-                    st.rerun()
+                    st.warning("Limpando campos...")
+                    time.sleep(2) 
+                    reset_campos()
         
         with col_btn2:
             if st.button("🗑️ Limpar Tudo", use_container_width=True):
-                st.rerun()
+                reset_campos()
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
-    if st.text_input("Senha", type="password") == "12345":
+    if st.text_input("Senha", type="password") == "globus2026":
         if 'solicitacao' in st.session_state:
             sol = st.session_state['solicitacao']
             st.subheader(f"Ajuste de Solicitação: {sol['nome']}")
