@@ -210,7 +210,8 @@ with aba_aprovacao:
                     df_final = pd.DataFrame(dados_ajustados)
                     df_final['Colaborador'] = sol['nome']
                     df_final['Data Solicitacao'] = sol['data']
-                    conn.create(data=df_final)
+                    # Define a aba fixa como "Reembolsos"
+                    conn.create(data=df_final, worksheet="Reembolsos")
                 except Exception as e:
                     st.error(f"Erro ao salvar na planilha: {e}")
                 
