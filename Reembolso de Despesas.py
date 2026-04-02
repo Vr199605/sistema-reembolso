@@ -1,527 +1,223 @@
 import streamlit as st
 import pandas as pd
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-import os
-import base64
+from datetime import datetime
 import smtplib
+import io
+import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
-from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Portal de Reembolso - Globus", layout="wide")
+# ReportLab para o layout
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
-# --- REGRAS DA POLÍTICA ---
-LIMITES = {
-    "REFEIÇÃO VIAGEM (em R$)": 150.0,
-    "ESTACIONAMENTO (em R$)": 70.0,
-    "BEBIDA ALCOÓLICA (em R$)": 50.0
-}
+# Configuração da página
+st.set_page_config(page_title="Sistema de Reembolso", layout="wide")
 
-CATEGORIAS = [
-    "ESTACIONAMENTO (em R$)", 
-    "PEDÁGIO (em R$)", 
-    "KM¹ (em qtde)", 
-    "REPRESENTAÇÃO (em R$)", 
-    "TAXI / UBER (em R$)", 
-    "REFEIÇÃO VIAGEM (em R$)", 
-    "OUTROS* (em R$)"
-]
-VALOR_KM = 1.37
-ARQUIVO_EXCEL = "base_reembolsos.xlsx"
+# --- CONEXÃO COM GOOGLE SHEETS ---
+# As credenciais devem estar no arquivo .streamlit/secrets.toml
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+except Exception as e:
+    st.error(f"Erro na conexão com Planilha: {e}")
 
-# --- FUNÇÕES DE AUXÍLIO ---
-def formatar_moeda(valor):
-    if valor is None: return "R$ 0,00"
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-# --- FUNÇÕES DE SISTEMA ---
-
-def atualizar_excel():
-    """Salva o estado atual do db no arquivo Excel para permanência de dados"""
-    todos_itens = []
-    for solic in st.session_state.db:
-        for item in solic['Detalhes']:
-            todos_itens.append({
-                "ID": solic['id'],
-                "Colaborador": solic['Colaborador'],
-                "Data_Item": item.get('data', solic['Data']),
-                "Status": solic['Status'],
-                "Categoria": item['categoria'],
-                "Valor": item['valor'],
-                "Motivo": item['motivo'],
-                "Comentario_Admin": solic.get('Comentario', ''),
-                "Caminho_Arquivo": solic['CaminhoArquivo']
-            })
-    df = pd.DataFrame(todos_itens)
-    df.to_excel(ARQUIVO_EXCEL, index=False)
-
-def carregar_dados_iniciais():
-    if os.path.exists(ARQUIVO_EXCEL):
-        try:
-            df = pd.read_excel(ARQUIVO_EXCEL)
-            db_recuperado = []
-            for solic_id in df['ID'].unique():
-                df_solic = df[df['ID'] == solic_id]
-                primeira_linha = df_solic.iloc[0]
-                detalhes = []
-                for _, row in df_solic.iterrows():
-                    detalhes.append({
-                        "categoria": row['Categoria'],
-                        "valor": row['Valor'],
-                        "motivo": row['Motivo'],
-                        "data": row.get('Data_Item', primeira_linha['Data'])
-                    })
-                
-                db_recuperado.append({
-                    "id": int(solic_id),
-                    "Colaborador": primeira_linha['Colaborador'],
-                    "Data": primeira_linha['Data'],
-                    "Status": primeira_linha['Status'],
-                    "Detalhes": detalhes,
-                    "CaminhoArquivo": primeira_linha['Caminho_Arquivo'],
-                    "Comentario": primeira_linha['Comentario_Admin']
-                })
-            return db_recuperado
-        except:
-            return []
-    return []
-
-def enviar_aviso_ao_gabriel(solicitacao):
-    destinatario = "gabriel.coelho@globusseguros.com.br"
-    remetente = "victormoreiraicnv@gmail.com"
-    senha = "odym ioqm ybew ejnn"
-
-    msg = MIMEMultipart()
-    msg['From'] = remetente
-    msg['To'] = destinatario
-    msg['Subject'] = f"📩 Nova Solicitação de Reembolso: {solicitacao['Colaborador']}"
-
-    corpo = f"""
-    Olá Gabriel Coelho,
-    
-    Um colaborador acabou de enviar uma nova solicitação de reembolso no portal.
-    
-    DETALHES:
-    - Colaborador: {solicitacao['Colaborador']}
-    - Data do Envio: {datetime.now().strftime('%d/%m/%Y')}
-    
-    Por favor, acesse o portal para verificar, ajustar e aprovar a solicitação:
-    https://reembolsodespesas.streamlit.app/
-    A senha para acesso é: globus2026
-    """
-    msg.attach(MIMEText(corpo, 'plain'))
-
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(remetente, senha)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        return False
-
-def enviar_email_automatico(dados, arquivo_pdf, caminhos_arquivos):
-    destinatario = "gabriel.coelho@globusseguros.com.br"
-    remetente = "victormoreiraicnv@gmail.com"
-    senha = "odym ioqm ybew ejnn"
-
-    msg = MIMEMultipart()
-    msg['From'] = remetente
-    msg['To'] = destinatario
-    status_formatado = dados['Status'].upper()
-    msg['Subject'] = f"[{status_formatado}] Reembolso: {dados['Colaborador']} - ID {dados['id']}"
-
-    corpo = f"Olá Gabriel Coelho,\n\nUma solicitação de reembolso foi finalizada por você no Portal Globus.\n\nColaborador: {dados['Colaborador']}\nStatus: {status_formatado}\n"
-    if dados['Status'] == "Reprovado":
-        corpo += f"\nMOTIVO DA REPROVAÇÃO: {dados.get('Comentario', 'Não informado')}"
-    
-    msg.attach(MIMEText(corpo, 'plain'))
-
-    try:
-        # Anexa o PDF do relatório
-        if os.path.exists(arquivo_pdf):
-            with open(arquivo_pdf, "rb") as f:
-                part = MIMEApplication(f.read(), Name=os.path.basename(arquivo_pdf))
-                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(arquivo_pdf)}"'
-                msg.attach(part)
-        
-        # Anexa todos os comprovantes (lista separada por ;)
-        for caminho in caminhos_arquivos.split(";"):
-            if os.path.exists(caminho):
-                with open(caminho, "rb") as f:
-                    part = MIMEApplication(f.read(), Name=os.path.basename(caminho))
-                    part['Content-Disposition'] = f'attachment; filename="{os.path.basename(caminho)}"'
-                    msg.attach(part)
-        
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(remetente, senha)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        return False
-
-def salvar_arquivos_locais(files):
-    if not os.path.exists("comprovantes"): os.makedirs("comprovantes")
-    paths = []
-    for file in files:
-        path = os.path.join("comprovantes", f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.name}")
-        with open(path, "wb") as f: f.write(file.getbuffer())
-        paths.append(path)
-    return ";".join(paths)
-
-def gerar_relatorio_pdf(dados, nome_arquivo):
-    doc = SimpleDocTemplate(nome_arquivo, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=30)
-    styles = getSampleStyleSheet()
+# --- FUNÇÃO GERAR PDF (REPORTLAB) ---
+def gerar_pdf(nome, data_sol, dados_tabela, total):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
     elements = []
+    styles = getSampleStyleSheet()
     
-    # Cores Globus
-    cor_primaria = colors.HexColor("#1f4e79")
-    cor_fundo = colors.HexColor("#f4f7f9")
-
-    # Estilos Customizados
-    style_header = ParagraphStyle('Header', parent=styles['Normal'], fontSize=20, textColor=cor_primaria, alignment=1, spaceAfter=10, fontName='Helvetica-Bold')
-    style_label = ParagraphStyle('Label', parent=styles['Normal'], fontSize=9, textColor=colors.grey, fontName='Helvetica-Bold')
-    style_value = ParagraphStyle('Value', parent=styles['Normal'], fontSize=11, textColor=colors.black)
-
-    # Título e Linha Decorativa
-    elements.append(Paragraph("RELATÓRIO DE REEMBOLSO", style_header))
-    elements.append(HRFlowable(width="100%", thickness=2, color=cor_primaria, spaceAfter=20))
-
-    # Tabela de Informações Gerais
-    info_data = [
-        [Paragraph("COLABORADOR", style_label), Paragraph("ID SOLICITAÇÃO", style_label), Paragraph("STATUS", style_label)],
-        [Paragraph(dados['Colaborador'], style_value), Paragraph(f"#{dados['id']}", style_value), Paragraph(dados['Status'].upper(), style_value)],
-        [Spacer(1, 10), Spacer(1, 10), Spacer(1, 10)],
-        [Paragraph("DATA DE EMISSÃO", style_label), Paragraph("APROVADOR", style_label), ""] ,
-        [Paragraph(datetime.now().strftime("%d/%m/%Y"), style_value), Paragraph("GABRIEL COELHO", style_value), ""]
-    ]
+    elements.append(Paragraph(f"Relatório de Reembolso de Despesas", styles['Title']))
+    elements.append(Spacer(1, 24))
     
-    t_info = Table(info_data, colWidths=[2.5*inch, 2*inch, 2*inch])
-    t_info.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-    ]))
-    elements.append(t_info)
+    elements.append(Paragraph(f"<b>Colaborador:</b> {nome}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Data da Solicitação:</b> {data_sol}", styles['Normal']))
     elements.append(Spacer(1, 20))
 
-    # Tabela de Itens
-    despesas_data = [["DATA", "CATEGORIA", "MOTIVO / JUSTIFICATIVA", "VALOR"]]
-    total_geral = 0
-    for item in dados['Detalhes']:
-        despesas_data.append([
-            item.get('data', dados['Data']), 
-            item['categoria'], 
-            Paragraph(item['motivo'], styles['Normal']), 
-            formatar_moeda(item['valor'])
-        ])
-        total_geral += item['valor']
+    data = [["Data", "Categoria", "Motivo", "Valor (R$)"]]
+    for item in dados_tabela:
+        data.append([item['Data'], item['Categoria'], item['Motivo'], f"{item['Valor Total']:.2f}"])
     
-    t_desp = Table(despesas_data, colWidths=[0.9*inch, 1.8*inch, 3.2*inch, 1.1*inch])
-    t_desp.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), cor_primaria),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('ALIGN', (-1,0), (-1,-1), 'RIGHT'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 10),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 8),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-    ]))
-    elements.append(t_desp)
-
-    # Totalizador
-    total_data = [["", "TOTAL A RECEBER:", formatar_moeda(total_geral)]]
-    t_total = Table(total_data, colWidths=[2.7*inch, 3.2*inch, 1.1*inch])
-    t_total.setStyle(TableStyle([
-        ('ALIGN', (1,0), (1,0), 'RIGHT'),
-        ('ALIGN', (2,0), (2,0), 'RIGHT'),
-        ('FONTNAME', (1,0), (2,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (1,0), (2,0), 12),
-        ('TEXTCOLOR', (2,0), (2,0), cor_primaria),
-        ('TOPPADDING', (0,0), (-1,-1), 10),
-    ]))
-    elements.append(t_total)
-
-    # Observações
-    if dados.get('Comentario'):
-        elements.append(Spacer(1, 30))
-        elements.append(Paragraph("OBSERVAÇÕES DO FINANCEIRO", style_label))
-        elements.append(HRFlowable(width="30%", thickness=1, color=colors.lightgrey, align='LEFT'))
-        elements.append(Spacer(1, 5))
-        elements.append(Paragraph(dados['Comentario'], styles['Normal']))
-
-    doc.build(elements)
-
-def gerar_relatorio_mensal_pdf(lista_solicitacoes, mes_ano, nome_arquivo):
-    doc = SimpleDocTemplate(nome_arquivo, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=40, bottomMargin=30)
-    styles = getSampleStyleSheet()
-    elements = []
-    cor_primaria = colors.HexColor("#1f4e79")
-    
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], fontSize=18, textColor=cor_primaria, alignment=1)
-    
-    elements.append(Paragraph("FECHAMENTO MENSAL DE REEMBOLSOS", title_style))
-    elements.append(Paragraph(f"Período: {mes_ano} | Globus Seguros", ParagraphStyle('Sub', alignment=1, spaceAfter=20)))
-
-    data_table = [["COLABORADOR", "CATEGORIA", "DATA", "VALOR"]]
-    total_periodo = 0
-    gastos_por_colab = {}
-
-    for s in lista_solicitacoes:
-        colab = s['Colaborador']
-        if colab not in gastos_por_colab: gastos_por_colab[colab] = 0
-        for item in s['Detalhes']:
-            data_item = item.get('data', s['Data'])
-            data_table.append([colab, item['categoria'], data_item, formatar_moeda(item['valor'])])
-            total_periodo += item['valor']
-            gastos_por_colab[colab] += item['valor']
-
-    t = Table(data_table, colWidths=[2*inch, 2.3*inch, 1.2*inch, 1.5*inch])
+    t = Table(data, colWidths=[80, 150, 220, 85])
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), cor_primaria),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('ALIGN', (-1,0), (-1,-1), 'RIGHT')
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('WORDWRAP', (0, 0), (-1, -1), True),
     ]))
     elements.append(t)
     
-    elements.append(Spacer(1, 30))
-    elements.append(Paragraph("<b>RESUMO POR COLABORADOR</b>", styles['Normal']))
-    
-    resumo_data = [["COLABORADOR", "TOTAL"]]
-    for c, v in gastos_por_colab.items():
-        resumo_data.append([c, formatar_moeda(v)])
-    resumo_data.append(["TOTAL GERAL", formatar_moeda(total_periodo)])
-    
-    t_res = Table(resumo_data, colWidths=[4*inch, 3*inch])
-    t_res.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,-1), (-1,-1), colors.whitesmoke),
-        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold')
-    ]))
-    elements.append(t_res)
+    elements.append(Spacer(1, 25))
+    elements.append(Paragraph(f"<b>VALOR TOTAL A REEMBOLSAR: R$ {total:.2f}</b>", styles['Heading2']))
+
     doc.build(elements)
+    buffer.seek(0)
+    return buffer
 
-# --- INICIALIZAÇÃO DE DADOS ---
-if 'db' not in st.session_state: 
-    st.session_state.db = carregar_dados_iniciais()
+# --- FUNÇÕES DE E-MAIL ---
+def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None):
+    seu_email = "victormoreiraicnv@gmail.com"
+    senha_app = "" # Inserir sua Senha de App do Google aqui
+    msg = MIMEMultipart()
+    msg['From'] = seu_email
+    msg['To'] = destinatario
+    msg['Subject'] = assunto
+    msg.attach(MIMEText(corpo, 'plain'))
+    
+    if pdf_buffer:
+        part = MIMEApplication(pdf_buffer.read(), Name="reembolso_aprovado.pdf")
+        part['Content-Disposition'] = 'attachment; filename="reembolso_aprovado.pdf"'
+        msg.attach(part)
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(seu_email, senha_app)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except: return False
 
-if 'items_reembolso' not in st.session_state: 
-    st.session_state.items_reembolso = [{"categoria": CATEGORIAS[0], "valor": None, "motivo": "", "data": datetime.now()}]
-
-# --- ABA DE PASSO A PASSO (NOVA) ---
-aba_guia, aba_colab, aba_admin = st.tabs(["📖 Guia de Preenchimento", "🚀 Solicitar Reembolso", "🔑 Verificação e Aprovação (Gabriel)"])
+# --- INTERFACE ---
+aba_guia, aba_solicitacao, aba_aprovacao = st.tabs(["📖 Guia Passo a Passo", "📋 Solicitação", "🔐 Aprovação (Gabriel Coelho)"])
 
 with aba_guia:
-    st.title("📖 Como solicitar seu reembolso")
-    st.markdown("""
-    Bem-vindo ao **Portal de Reembolsos Globus**. Siga o passo a passo abaixo para garantir que sua solicitação seja processada rapidamente.
+    st.header("📖 Guia de Preenchimento de Reembolso")
+    st.info("Siga os passos abaixo para garantir que sua solicitação seja processada sem erros.")
     
-    ---
-    ### 1️⃣ Identificação
-    Na aba **'Solicitar Reembolso'**, comece preenchendo seu **Nome Completo**. Isso é fundamental para a organização dos pagamentos.
-
-    ### 2️⃣ Adicionando Despesas
-    Você pode adicionar várias despesas em uma única solicitação:
-    * **Data:** Selecione a data exata em que o gasto ocorreu.
-    * **Categoria:** Escolha o tipo de despesa (ex: Estacionamento, Uber, Pedágio).
-    * **Valor:** Insira o valor conforme o comprovante.
-    *   *Nota para KM:* Ao selecionar **KM¹**, insira a quantidade rodada e o sistema calculará automaticamente o valor (R$ 1,37/km).
-    * **Motivo:** Descreva brevemente o motivo do gasto (ex: 'Visita ao cliente X'). **Este campo é obrigatório.**
-
-    ### 3️⃣ Comprovantes
-    **Nenhuma despesa é aprovada sem comprovante.** * Tire fotos nítidas ou anexe os PDFs dos recibos/notas fiscais.
-    * Você pode selecionar múltiplos arquivos de uma vez.
-
-    ### 4️⃣ Limites da Política
-    Fique atento aos limites automáticos do sistema:
-    * **Refeição Viagem(Jantar):** Até R$ 150,00
-    * **Estacionamento:** Até R$ 70,00
-    * *Gastos acima desses valores serão ajustados ao teto da política pelo aprovador.*
-
-    ---
-    ### 🛡️ Dúvidas Frequentes
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("""
+        ### 1️⃣ Identificação
+        Preencha seu **nome completo** e a **data atual** da solicitação. 
+        
+        ### 2️⃣ Seleção de Categorias
+        Escolha todas as categorias que compõem sua despesa. Você pode selecionar várias ao mesmo tempo.
+        
+        ### 3️⃣ Detalhamento por Item
+        Para cada categoria selecionada, informe:
+        * **Data da despesa**: O dia em que o gasto ocorreu.
+        * **Valor/Quantidade**: Se for KM, informe a distância. O sistema calcula o valor automaticamente.
+        * **Motivo**: Descreva brevemente a finalidade do gasto (campo obrigatório).
+        """)
     
-    > **Esqueci o motivo?** O sistema impedirá o envio até que todos os campos de motivo estejam preenchidos.
-    """)
-    st.info("💡 Assim que você clicar em 'Enviar', o Gabriel Coelho receberá uma notificação imediata para análise. Prazo para D+5 após a aprovação.")
+    with col2:
+        st.markdown("""
+        ### 4️⃣ Comprovantes
+        O upload de arquivos é **obrigatório**. Aceitamos PDF e imagens (PNG/JPG). Certifique-se de que o arquivo está legível.
+        
+        ### 5️⃣ Envio
+        Clique em **Enviar Solicitação**. O sistema notificará o responsável e você receberá o aviso de sucesso na tela.
+
+        ### 6️⃣ Data de Pagamento
+        Após a análise e aprovação da solicitação, o pagamento será realizado em **D+5** (cinco dias úteis após a data da análise).
+        """)
     
-    # --- NOVO BOTÃO DE DOWNLOAD (OPÇÃO 2) ---
     st.markdown("---")
     st.subheader("❓ Ainda tem dúvidas?")
-    caminho_manual = "documentos/manual_reembolso.pdf"
+    st.write("Acesse o manual completo das políticas de viagens e reembolso no botão abaixo:")
     
-    if os.path.exists(caminho_manual):
+    caminho_manual = os.path.join("documentos", "manual_reembolso.pdf")
+    
+    try:
         with open(caminho_manual, "rb") as f:
             st.download_button(
-                label="📥 Clique aqui para baixar o guia detalhado em PDF",
+                label="📥 Baixar Manual de Reembolso (PDF)",
                 data=f,
-                file_name="Guia_Reembolso_Globus.pdf",
+                file_name="manual_reembolso.pdf",
                 mime="application/pdf"
             )
-    else:
-        st.caption("Nota: O guia detalhado estará disponível em breve.")
+    except FileNotFoundError:
+        st.error("Arquivo 'manual_reembolso.pdf' não encontrado na pasta 'documentos'.")
 
-with aba_colab:
-    st.header("Formulário de Reembolso - Globus")
-    nome = st.text_input("Nome Completo")
+with aba_solicitacao:
+    st.title("🚀 Solicitação de Reembolso de Despesas")
     st.markdown("---")
-    for i, item in enumerate(st.session_state.items_reembolso):
-        col_data, col_cat, col_val, col_mot, col_del = st.columns([1.2, 1.8, 1.2, 1.8, 0.4])
-        
-        item['data'] = col_data.date_input(f"Data {i+1}", value=item.get('data', datetime.now()), format="DD/MM/YYYY", key=f"date_{i}")
-        item['categoria'] = col_cat.selectbox(f"Categoria {i+1}", CATEGORIAS, key=f"cat_{i}")
-        
-        if item['categoria'] == "KM¹ (em qtde)":
-            qtd_km = col_val.number_input("Qtd KM", min_value=0, step=1, value=None, key=f"km_{i}")
-            valor_calc = round((qtd_km if qtd_km else 0) * VALOR_KM, 2)
-            item['valor'] = valor_calc
-            col_val.markdown(f"<p style='color: #1f4e79; font-weight: bold; margin:0;'>{formatar_moeda(valor_calc)}</p>", unsafe_allow_html=True)
-        else:
-            item['valor'] = col_val.number_input(f"Valor R$", min_value=0.0, step=0.01, format="%.2f", value=None, key=f"val_{i}")
-            if item['valor'] and item['categoria'] in LIMITES and item['valor'] > LIMITES[item['categoria']]:
-                st.warning(f"Item {i+1}: O limite para {item['categoria']} é de {formatar_moeda(LIMITES[item['categoria']])}. O reembolso será processado até este teto.")
-        
-        item['motivo'] = col_mot.text_input(f"Motivo (Obrigatório)", key=f"mot_{i}")
-        
-        if col_del.button("🗑️", key=f"del_{i}"):
-            st.session_state.items_reembolso.pop(i)
-            st.rerun()
-            
-    col_btns1, col_btns2 = st.columns([1, 1])
-    if col_btns1.button("➕ Adicionar Outro Item"):
-        st.session_state.items_reembolso.append({"categoria": CATEGORIAS[0], "valor": None, "motivo": "", "data": datetime.now()})
-        st.rerun()
+    col_perfil1, col_perfil2 = st.columns(2)
+    with col_perfil1: nome = st.text_input("Nome completo", key="nome_user")
+    with col_perfil2: data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
 
-    if col_btns2.button("🔄 Resetar Ciclo"):
-        st.session_state.items_reembolso = [{"categoria": CATEGORIAS[0], "valor": None, "motivo": "", "data": datetime.now()}]
-        st.rerun()
+    categorias_disponiveis = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
+    selecionadas = st.multiselect("Selecione as categorias:", categorias_disponiveis)
+    dados_despesas = []
+
+    if selecionadas:
+        for cat in selecionadas:
+            with st.container():
+                c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
+                c1.markdown(f"**{cat}**")
+                d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}")
+                if "KM (em qtde)" in cat:
+                    q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}")
+                    v_fin = (q_km * 1.37) if q_km else 0.0
+                    if q_km: c3.info(f"R$ {v_fin:.2f}")
+                else:
+                    v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}")
+                    if "REFEIÇÃO" in cat: 
+                        c3.markdown("**Limite até R$ 150**")
+                    elif "ESTACIONAMENTO" in cat: 
+                        c3.markdown("**Limite até R$ 70**")
+                    v_fin = v_fin if v_fin else 0.0
+                mot = c4.text_input("Motivo *", key=f"m_{cat}")
+                dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": v_fin, "Motivo": mot})
         
-    arquivos = st.file_uploader("Anexar Comprovantes (Obrigatório)", type=['pdf', 'png', 'jpg'], accept_multiple_files=True)
-    
-    if st.button("Enviar para Verificação"):
-        todos_motivos_preenchidos = all(it['motivo'].strip() != "" for it in st.session_state.items_reembolso)
-        
-        if nome and arquivos and any(it['valor'] and it['valor'] > 0 for it in st.session_state.items_reembolso) and todos_motivos_preenchidos:
-            caminhos = salvar_arquivos_locais(arquivos)
-            detalhes_limpos = []
-            for it in st.session_state.items_reembolso:
-                d = it.copy()
-                d['data'] = d['data'].strftime("%d/%m/%Y")
-                detalhes_limpos.append(d)
-                
-            nova_solic = {
-                "id": len(st.session_state.db) + 1, 
-                "Colaborador": nome, 
-                "Data": datetime.now().strftime("%d/%m/%Y"), 
-                "Detalhes": detalhes_limpos, 
-                "Status": "Em Verificação", 
-                "CaminhoArquivo": caminhos, 
-                "Comentario": ""
-            }
-            st.session_state.db.append(nova_solic)
-            atualizar_excel()
-            enviar_aviso_ao_gabriel(nova_solic)
-            st.session_state.items_reembolso = [{"categoria": CATEGORIAS[0], "valor": None, "motivo": "", "data": datetime.now()}]
-            st.success("Enviado! Gabriel Coelho recebeu um e-mail para verificar.")
-        else:
-            if not todos_motivos_preenchidos:
-                st.error("Por favor, preencha o Motivo/Justificativa para todos os itens.")
-            elif not arquivos:
-                st.error("Por favor, anexe ao menos um comprovante.")
+        st.subheader("Anexar Comprovantes")
+        arq = st.file_uploader("Upload (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+
+        if st.button("Enviar Solicitação"):
+            if any(not d["Motivo"].strip() for d in dados_despesas) or not arq:
+                st.error("Preencha todos os motivos e anexe os arquivos.")
             else:
-                st.error("Preencha todos os campos corretamente.")
+                st.session_state['solicitacao'] = {"nome": nome, "data": data_solicitacao.strftime('%d/%m/%Y'), "itens": dados_despesas}
+                enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"Solicitação: {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso.")
+                st.success("Enviado! Gabriel Coelho foi notificado.")
+                st.warning("Você só receberá dentro do limite das politicas.")
 
-with aba_admin:
-    st.header("Painel de Controle - Gabriel Coelho")
-    senha_adm = st.text_input("Senha de Acesso", type="password")
-    if senha_adm == "globus2026":
-        st.subheader("📊 Relatórios e Fechamento Mensal")
-        col_m1, col_m2 = st.columns([1, 2])
-        
-        opcoes_meses = ["Todos", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-        mes_ref = col_m1.selectbox("Selecione o Mês", opcoes_meses)
-        ano_ref = col_m2.selectbox("Ano", [2025, 2026, 2027])
-        
-        meses_map = {"Janeiro":"01", "Fevereiro":"02", "Março":"03", "Abril":"04", "Maio":"05", "Junho":"06", "Julho":"07", "Agosto":"08", "Setembro":"09", "Outubro":"10", "Novembro":"11", "Dezembro":"12"}
-        
-        solicitacoes_mes = []
-        for s in st.session_state.db:
-            if s['Status'] == "Aprovado":
-                if mes_ref == "Todos":
-                    itens_no_periodo = [it for it in s['Detalhes'] if str(ano_ref) in it.get('data', s['Data'])]
-                else:
-                    filtro_mes_ano = f"{meses_map[mes_ref]}/{ano_ref}"
-                    itens_no_periodo = [it for it in s['Detalhes'] if filtro_mes_ano in it.get('data', s['Data'])]
+with aba_aprovacao:
+    st.title("🔐 Área de Verificação")
+    if st.text_input("Senha", type="password") == "12345":
+        if 'solicitacao' in st.session_state:
+            sol = st.session_state['solicitacao']
+            st.subheader(f"Ajuste de Solicitação: {sol['nome']}")
+            
+            dados_ajustados = []
+            for i, item in enumerate(sol['itens']):
+                with st.container():
+                    c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
+                    c1.markdown(f"**{item['Categoria']}**")
+                    adj_data = c2.text_input("Data", value=item['Data'], key=f"adj_d_{i}")
+                    adj_val = c3.number_input("Valor R$", value=item['Valor Total'], key=f"adj_v_{i}")
+                    adj_mot = c4.text_input("Motivo", value=item['Motivo'], key=f"adj_m_{i}")
+                    dados_ajustados.append({"Data": adj_data, "Categoria": item['Categoria'], "Valor Total": adj_val, "Motivo": adj_mot})
+            
+            total_adj = sum(d["Valor Total"] for d in dados_ajustados)
+            st.metric("Total Final", f"R$ {total_adj:.2f}")
+
+            if st.button("✅ Aprovar e Enviar PDF"):
+                # 1. Salvar na Planilha Google
+                try:
+                    df_final = pd.DataFrame(dados_ajustados)
+                    df_final['Colaborador'] = sol['nome']
+                    df_final['Data Solicitacao'] = sol['data']
+                    conn.create(data=df_final)
+                except Exception as e:
+                    st.error(f"Erro ao salvar na planilha: {e}")
                 
-                if itens_no_periodo:
-                    s_copy = s.copy()
-                    s_copy['Detalhes'] = itens_no_periodo
-                    solicitacoes_mes.append(s_copy)
-        
-        col_rel_1, col_rel_2 = st.columns([1, 1])
-        with col_rel_1:
-            if st.button("📄 GERAR PDF DE FECHAMENTO MENSAL"):
-                if solicitacoes_mes:
-                    nome_pdf_mensal = f"Fechamento_{mes_ref}_{ano_ref}.pdf"
-                    periodo_label = f"{mes_ref}/{ano_ref}" if mes_ref != "Todos" else f"Ano Completo {ano_ref}"
-                    gerar_relatorio_mensal_pdf(solicitacoes_mes, periodo_label, nome_pdf_mensal)
-                    with open(nome_pdf_mensal, "rb") as f:
-                        st.download_button("📥 Baixar Relatório Mensal", f, file_name=nome_pdf_mensal)
-                else:
-                    st.warning(f"Não existem despesas 'Aprovadas' para o período selecionado.")
-        
-        with col_rel_2:
-            if st.button("🗑️ Resetar Banco de Dados (PDFs)"):
-                st.session_state.db = []
-                pd.DataFrame().to_excel(ARQUIVO_EXCEL, index=False)
-                st.success("Banco de dados resetado com sucesso para novos testes!")
-                st.rerun()
-        
-        st.markdown("---")
-        st.subheader("⏳ Solicitações Pendentes")
-        verificar = [s for s in st.session_state.db if s['Status'] == "Em Verificação"]
-        if not verificar: st.info("Não há solicitações pendentes para sua aprovação.")
-        for idx, solic in enumerate(verificar):
-            with st.expander(f"ID {solic['id']} - {solic['Colaborador']}"):
-                c_edit, c_view = st.columns([1.5, 1])
-                with c_edit:
-                    solic['Colaborador'] = st.text_input("Nome", solic['Colaborador'], key=f"adm_n_{idx}")
-                    for i_item, item in enumerate(solic['Detalhes']):
-                        ec0, ec1, ec2, ec3 = st.columns([1, 1.5, 1, 1.5])
-                        item['data'] = ec0.text_input(f"Data", value=item.get('data', solic['Data']), key=f"adm_d_{idx}_{i_item}")
-                        item['categoria'] = ec1.selectbox(f"Cat", CATEGORIAS, index=CATEGORIAS.index(item['categoria']), key=f"adm_cat_{idx}_{i_item}")
-                        item['valor'] = ec2.number_input(f"Valor", value=float(item['valor'] or 0), format="%.2f", key=f"adm_v_{idx}_{i_item}")
-                        item['motivo'] = ec3.text_input(f"Motivo", value=item['motivo'], key=f"adm_m_{idx}_{i_item}")
-                    
-                    st.markdown("---")
-                    decisao = st.radio("Sua Decisão", ["Aprovado", "Reprovado"], key=f"dec_{idx}", horizontal=True)
-                    motivo_final = st.text_area("Justificativa", key=f"com_{idx}")
-                    
-                    if st.button("FINALIZAR", key=f"fin_{idx}"):
-                        solic['Status'] = decisao
-                        solic['Comentario'] = motivo_final
-                        atualizar_excel()
-                        nome_pdf = f"Relatorio_ID_{solic['id']}.pdf"
-                        gerar_relatorio_pdf(solic, nome_pdf)
-                        enviar_email_automatico(solic, nome_pdf, solic['CaminhoArquivo'])
-                        st.success(f"Solicitação #{solic['id']} finalizada!")
-                        st.rerun()
-                with c_view:
-                    st.write("📂 **Comprovantes Anexados:**")
-                    for path in solic['CaminhoArquivo'].split(";"):
-                        if os.path.exists(path):
-                            with open(path, "rb") as f:
-                                st.download_button(label=f"Baixar {os.path.basename(path)}", data=f, file_name=os.path.basename(path), key=f"dl_{path}_{idx}")
-    elif senha_adm != "": st.error("Senha incorreta.")
+                # 2. Gerar PDF e Enviar E-mail
+                pdf = gerar_pdf(sol['nome'], sol['data'], dados_ajustados, total_adj)
+                enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"APROVADO - {sol['nome']}", "Seguem os dados aprovados.", pdf)
+                st.success("Aprovado! Dados salvos na planilha e PDF enviado!")
+                
+            if st.button("❌ Reprovar"): st.error("Reprovada.")
+        else: st.info("Sem pendências.")
