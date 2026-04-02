@@ -180,13 +180,13 @@ with aba_solicitacao:
                 st.error("Preencha todos os motivos e anexe os arquivos.")
             else:
                 st.session_state['solicitacao'] = {"nome": nome, "data": data_solicitacao.strftime('%d/%m/%Y'), "itens": dados_despesas}
-                enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"Solicitação: {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso.")
+                enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"O colaborador {nome} enviou uma solicitação de reembolso.")
                 st.success("Enviado! Gabriel Coelho foi notificado.")
                 st.warning("Você só receberá dentro do limite das politicas.")
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
-    if st.text_input("Senha", type="password") == "12345":
+    if st.text_input("Senha", type="password") == "globus2026":
         if 'solicitacao' in st.session_state:
             sol = st.session_state['solicitacao']
             st.subheader(f"Ajuste de Solicitação: {sol['nome']}")
@@ -221,7 +221,7 @@ with aba_aprovacao:
                 
                 # 2. Gerar PDF e Enviar E-mail
                 pdf = gerar_pdf(sol['nome'], sol['data'], dados_ajustados, total_adj)
-                enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"APROVADO - {sol['nome']}", "Seguem os dados aprovados.", pdf)
+                enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {sol['nome']}", "Seguem os dados aprovados.", pdf)
                 st.success("Aprovado! Dados salvos na planilha e PDF enviado!")
                 
             if st.button("❌ Reprovar"): st.error("Reprovada.")
