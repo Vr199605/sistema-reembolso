@@ -139,7 +139,7 @@ with aba_guia:
         Clique em **Enviar Solicitação**. O sistema notificará o responsável e você receberá o aviso de sucesso na tela.
 
         ### 6️⃣ Data de Pagamento
-        Após a análise e aprovação da solicitação, o pagamento será realizado em **D+5** (cinco dias úteis após a data da análise).
+        Após a análise e aprovação da solicitação, o pagamento será realizado em **D+5** (cinco dias corridos após a data da análise).
         """)
     
     st.markdown("---")
@@ -206,7 +206,7 @@ with aba_solicitacao:
                         existing = conn.read(worksheet="Pendentes")
                         conn.update(worksheet="Pendentes", data=pd.concat([existing, df_p], ignore_index=True))
                         
-                        enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"Solicitação: {nome}", f"Nova solicitação de {nome}. Verifique na aba de Aprovação.")
+                        enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"Nova solicitação de {nome}. Verifique na aba de Aprovação.")
                         st.success("Enviado!")
                         time.sleep(2)
                         reset_campos()
@@ -216,7 +216,7 @@ with aba_solicitacao:
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
-    if st.text_input("Senha", type="password") == "12345":
+    if st.text_input("Senha", type="password") == "globus2026":
         try:
             df_pend = conn.read(worksheet="Pendentes", ttl=0)
             if not df_pend.empty:
@@ -256,7 +256,7 @@ with aba_aprovacao:
                     conn.update(worksheet="Pendentes", data=df_pend[df_pend['Colaborador'] != colab_sel])
                     
                     pdf = gerar_pdf(colab_sel, df_fin['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
-                    enviar_email_com_pdf("victormoreiraicnv@gmail.com", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
+                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
                     st.success("Tudo enviado!")
                     time.sleep(2)
                     st.rerun()
