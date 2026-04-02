@@ -68,7 +68,7 @@ def gerar_pdf(nome, data_sol, dados_tabela, total):
 # --- FUNÇÕES DE E-MAIL ---
 def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None):
     seu_email = "victormoreiraicnv@gmail.com"
-    senha_app = "" # Inserir sua Senha de App do Google aqui
+    senha_app = "odym ioqm ybew ejnn" # Inserir sua Senha de App do Google aqui
     msg = MIMEMultipart()
     msg['From'] = seu_email
     msg['To'] = destinatario
