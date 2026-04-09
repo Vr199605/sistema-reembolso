@@ -10,19 +10,18 @@ from email.mime.application import MIMEApplication
 from streamlit_gsheets import GSheetsConnection
 import time
 
-# ReportLab para o layout do PDF
+# ReportLab para o layout
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Sistema de Reembolso", layout="wide", page_icon="💰")
+# Configuração da página
+st.set_page_config(page_title="Sistema de Reembolso", layout="wide")
 
-# Criar pastas necessárias
-for pasta in ["comprovantes_servidor", "documentos"]:
-    if not os.path.exists(pasta):
-        os.makedirs(pasta)
+# Criar pasta para anexos no servidor (necessário para o Gabriel baixar de outro PC)
+if not os.path.exists("comprovantes_servidor"):
+    os.makedirs("comprovantes_servidor")
 
 # --- CONEXÃO COM GOOGLE SHEETS ---
 try:
@@ -30,7 +29,7 @@ try:
 except Exception as e:
     st.error(f"Erro na conexão com Planilha: {e}")
 
-# --- FUNÇÃO GERAR PDF ---
+# --- FUNÇÃO GERAR PDF (REPORTLAB) ---
 def gerar_pdf(nome, data_sol, dados_tabela, total):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
@@ -53,9 +52,13 @@ def gerar_pdf(nome, data_sol, dados_tabela, total):
         ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
         ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('WORDWRAP', (0, 0), (-1, -1), True),
     ]))
     elements.append(t)
     
@@ -66,7 +69,7 @@ def gerar_pdf(nome, data_sol, dados_tabela, total):
     buffer.seek(0)
     return buffer
 
-# --- FUNÇÕES DE E-MAIL ---
+# --- FUNÇÕES DE E-MAIL (SUPORTE A MÚLTIPLOS ANEXOS) ---
 def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos_anexos=None):
     seu_email = "victormoreiraicnv@gmail.com"
     senha_app = "odym ioqm ybew ejnn"
@@ -98,132 +101,184 @@ def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos
         return True
     except: return False
 
+# --- FUNÇÃO DE RESET ---
 def reset_campos():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
 
 # --- INTERFACE ---
-aba_guia, aba_solicitacao, aba_aprovacao = st.tabs(["📖 Guia", "📋 Solicitação", "🔐 Aprovação"])
+aba_guia, aba_solicitacao, aba_aprovacao = st.tabs(["📖 Guia Passo a Passo", "📋 Solicitação", "🔐 Aprovação (Gabriel Coelho)"])
 
 with aba_guia:
-    st.header("📖 Guia de Reembolso")
-    st.markdown("""
-    1. Preencha seu nome e data.
-    2. Selecione as categorias (pode escolher várias).
-    3. Informe o motivo e o valor (ou KM).
-    4. **Obrigatório:** Anexe as fotos dos comprovantes.
-    5. O pagamento ocorre em **D+5** após a aprovação.
-    """)
+    st.header("📖 Guia de Preenchimento de Reembolso")
+    st.info("Siga os passos abaixo para garantir que sua solicitação seja processada sem erros.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("""
+        ### 1️⃣ Identificação
+        Preencha seu **nome completo** e a **data atual** da solicitação. 
+        
+        ### 2️⃣ Seleção de Categorias
+        Escolha todas as categorias que compõem sua despesa. Você pode selecionar várias ao mesmo tempo.
+        
+        ### 3️⃣ Detalhamento por Item
+        Para cada categoria selecionada, informe:
+        * **Data da despesa**: O dia em que o gasto ocorreu.
+        * **Valor/Quantidade**: Se for KM, informe a distância. O sistema calcula o valor automaticamente.
+        * **Motivo**: Descreva brevemente a finalidade do gasto (campo obrigatório).
+        """)
+    
+    with col2:
+        st.markdown("""
+        ### 4️⃣ Comprovantes
+        O upload de arquivos é **obrigatório**. Aceitamos PDF e imagens (PNG/JPG). Certifique-se de que o arquivo está legível.
+        
+        ### 5️⃣ Envio
+        Clique em **Enviar Solicitação**. O sistema notificará o responsável e você receberá o aviso de sucesso na tela.
+
+        ### 6️⃣ Data de Pagamento
+        Após a análise e aprovação da solicitação, o pagamento será realizado em **D+5** (cinco dias corridos após a data da análise).
+        """)
+    
+    st.markdown("---")
+    st.subheader("❓ Ainda tem dúvidas?")
+    st.write("Acesse o manual completo das políticas de viagens e reembolso no botão abaixo:")
+    
+    caminho_manual = os.path.join("documentos", "manual_reembolso.pdf")
+    try:
+        if not os.path.exists("documentos"): os.makedirs("documentos")
+        with open(caminho_manual, "rb") as f:
+            st.download_button(label="📥 Baixar Manual de Reembolso (PDF)", data=f, file_name="manual_reembolso.pdf", mime="application/pdf")
+    except:
+        st.error("Arquivo 'manual_reembolso.pdf' não encontrado na pasta 'documentos'.")
 
 with aba_solicitacao:
-    st.title("🚀 Nova Solicitação")
-    col1, col2 = st.columns(2)
-    nome = col1.text_input("Nome completo", key="n_user")
-    data_sol = col2.date_input("Data de solicitação", format="DD/MM/YYYY")
+    st.title("🚀 Solicitação de Reembolso de Despesas")
+    st.markdown("---")
+    col_perfil1, col_perfil2 = st.columns(2)
+    with col_perfil1: nome = st.text_input("Nome completo", key="nome_user")
+    with col_perfil2: data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
 
-    cats = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
-    selecionadas = st.multiselect("Categorias:", cats)
-    
-    dados_envio = []
+    categorias_disponiveis = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
+    selecionadas = st.multiselect("Selecione as categorias:", categorias_disponiveis)
+    dados_despesas = []
+
     if selecionadas:
         for cat in selecionadas:
-            with st.expander(f"Dados de {cat}", expanded=True):
-                c1, c2, c3 = st.columns([2, 2, 4])
-                d_item = c1.date_input("Data despesa", key=f"d_{cat}")
-                if "KM" in cat:
-                    km = c2.number_input("Qtde KM", min_value=0.0, key=f"v_{cat}")
-                    v_item = km * 1.37
-                    c2.info(f"R$ {v_item:.2f}")
+            with st.container():
+                c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
+                c1.markdown(f"**{cat}**")
+                d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}")
+                if "KM (em qtde)" in cat:
+                    q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}")
+                    v_fin = (q_km * 1.37) if q_km else 0.0
+                    if q_km: c3.info(f"R$ {v_fin:.2f}")
                 else:
-                    v_item = c2.number_input("Valor R$", min_value=0.0, key=f"v_{cat}")
-                motivo = c3.text_input("Motivo *", key=f"m_{cat}")
-                dados_envio.append({"Data": d_item.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": float(v_item or 0), "Motivo": motivo})
+                    v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}")
+                    if "REFEIÇÃO" in cat: c3.markdown("**Limite até R$ 150**")
+                    elif "ESTACIONAMENTO" in cat: c3.markdown("**Limite até R$ 70**")
+                    v_fin = v_fin if v_fin else 0.0
+                mot = c4.text_input("Motivo *", key=f"m_{cat}")
+                dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": float(v_fin), "Motivo": mot})
+        
+        st.subheader("Anexar Comprovantes")
+        arq = st.file_uploader("Upload (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
 
-        arq = st.file_uploader("Anexar Comprovantes (Imagens ou PDF) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
-
-        if st.button("Enviar Solicitação"):
-            if not nome or not arq or any(not d["Motivo"] for d in dados_envio):
-                st.error("Preencha todos os campos e anexe os comprovantes.")
-            else:
-                with st.spinner("Enviando..."):
+        col_btn1, col_btn2 = st.columns([2, 8])
+        with col_btn1:
+            if st.button("Enviar Solicitação", use_container_width=True):
+                if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or not nome:
+                    st.error("Preencha todos os campos.")
+                else:
                     try:
-                        # Salvar arquivos localmente
-                        salvos = []
+                        caminhos_salvos = []
                         for f in arq:
                             caminho = os.path.join("comprovantes_servidor", f"{nome}_{f.name}")
                             with open(caminho, "wb") as b: b.write(f.getbuffer())
-                            salvos.append(caminho)
+                            caminhos_salvos.append(caminho)
 
-                        # Preparar DataFrame e enviar para o Sheets
-                        df_novo = pd.DataFrame(dados_envio)
-                        df_novo['Colaborador'] = nome
-                        df_novo['Data Solicitacao'] = data_sol.strftime('%d/%m/%Y')
-                        df_novo['Caminhos_Anexos'] = "|".join(salvos)
+                        df_p = pd.DataFrame(dados_despesas)
+                        df_p['Colaborador'] = nome
+                        df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
+                        df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
 
-                        existing = conn.read(worksheet="Pendentes")
-                        # Limpeza para evitar Erro 500 (garantir que tipos batem)
-                        updated_df = pd.concat([existing, df_novo], ignore_index=True).fillna("")
-                        conn.update(worksheet="Pendentes", data=updated_df)
+                        # Garantir limpeza de dados para evitar Erro 500
+                        existing = conn.read(worksheet="Pendentes").astype(str)
+                        combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
                         
-                        enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Nova Solicitação: {nome}", f"Verifique o sistema.")
-                        st.success("Solicitação enviada com sucesso!")
+                        conn.update(worksheet="Pendentes", data=combined)
+                        
+                        enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"Nova solicitação de {nome}. Verifique na aba de Aprovação.")
+                        st.success("Enviado!")
                         time.sleep(2)
                         reset_campos()
-                    except Exception as e:
-                        st.error(f"Erro ao enviar: {e}")
+                    except Exception as e: 
+                        st.error(f"Erro ao salvar: {e}")
+                        st.exception(e)
+        with col_btn2:
+            if st.button("🗑️ Limpar Tudo"): reset_campos()
 
 with aba_aprovacao:
-    st.title("🔐 Área de Aprovação")
-    if st.text_input("Senha de Acesso", type="password") == "globus2026":
+    st.title("🔐 Área de Verificação")
+    if st.text_input("Senha", type="password") == "globus2026":
         try:
             df_pend = conn.read(worksheet="Pendentes", ttl=0)
             if not df_pend.empty:
-                colab = st.selectbox("Selecione o Colaborador:", df_pend['Colaborador'].unique())
-                dados_c = df_pend[df_pend['Colaborador'] == colab]
+                colab_sel = st.selectbox("Escolha o colaborador:", df_pend['Colaborador'].unique())
+                dados_f = df_pend[df_pend['Colaborador'] == colab_sel]
                 
-                # Exibir anexos
-                anexos_str = str(dados_c.iloc[0]['Caminhos_Anexos'])
-                lista_anexos = anexos_str.split("|") if anexos_str else []
+                st.subheader("📁 Verificação de Comprovantes")
+                string_anexos = str(dados_f.iloc[0]['Caminhos_Anexos']) if 'Caminhos_Anexos' in dados_f.columns else ""
+                lista_anexos = string_anexos.split("|") if (string_anexos and string_anexos != "nan") else []
                 
-                st.write("---")
-                cols_anexo = st.columns(max(len(lista_anexos), 1))
-                for idx, path in enumerate(lista_anexos):
-                    if os.path.exists(path):
-                        with open(path, "rb") as f:
-                            cols_anexo[idx].download_button(f"📄 Ver Anexo {idx+1}", f, file_name=os.path.basename(path))
+                if lista_anexos:
+                    c_anexos = st.columns(len(lista_anexos))
+                    for i, p in enumerate(lista_anexos):
+                        if os.path.exists(p):
+                            with open(p, "rb") as f_down:
+                                c_anexos[i].download_button(label=f"📄 Anexo {i+1}", data=f_down, file_name=os.path.basename(p))
+                
+                dados_ajustados = []
+                for i, row in dados_f.iterrows():
+                    with st.container():
+                        c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
+                        c1.markdown(f"**{row['Categoria']}**")
+                        adj_data = c2.text_input("Data", value=row['Data'], key=f"adj_d_{i}")
+                        adj_val = c3.number_input("Valor R$", value=float(row['Valor Total'] if row['Valor Total'] else 0), key=f"adj_v_{i}")
+                        adj_mot = c4.text_input("Motivo", value=row['Motivo'], key=f"adj_m_{i}")
+                        dados_ajustados.append({"Data": adj_data, "Categoria": row['Categoria'], "Valor Total": adj_val, "Motivo": adj_mot})
+                
+                total_adj = sum(d["Valor Total"] for d in dados_ajustados)
+                st.metric("Total Final", f"R$ {total_adj:.2f}")
 
-                # Ajustes Finais
-                st.subheader("Conferência de Valores")
-                ajustados = []
-                for i, row in dados_c.iterrows():
-                    c1, c2, c3 = st.columns([3, 2, 4])
-                    c1.markdown(f"**{row['Categoria']}**")
-                    v_adj = c2.number_input("Valor", value=float(row['Valor Total']), key=f"adj_v_{i}")
-                    m_adj = c3.text_input("Motivo", value=row['Motivo'], key=f"adj_m_{i}")
-                    ajustados.append({"Data": row['Data'], "Categoria": row['Categoria'], "Valor Total": v_adj, "Motivo": m_adj})
-                
-                total = sum(d['Valor Total'] for d in ajustados)
-                st.metric("Total a Pagar", f"R$ {total:.2f}")
-
-                if st.button("✅ Aprovar e Notificar"):
-                    df_final = pd.DataFrame(ajustados)
-                    df_final['Colaborador'] = colab
-                    df_final['Data Solicitacao'] = dados_c.iloc[0]['Data Solicitacao']
+                if st.button("✅ Aprovar e Enviar E-mail com Anexos"):
+                    df_fin = pd.DataFrame(dados_ajustados)
+                    df_fin['Colaborador'] = colab_sel
+                    df_fin['Data Solicitacao'] = dados_f.iloc[0]['Data Solicitacao']
                     
-                    # Salvar no histórico e remover das pendências
-                    hist = conn.read(worksheet="Reembolsos")
-                    conn.update(worksheet="Reembolsos", data=pd.concat([hist, df_final], ignore_index=True).fillna(""))
-                    conn.update(worksheet="Pendentes", data=df_pend[df_pend['Colaborador'] != colab].fillna(""))
+                    ex_of = conn.read(worksheet="Reembolsos").astype(str)
+                    new_history = pd.concat([ex_of, df_fin.astype(str)], ignore_index=True).replace("nan", "")
+                    conn.update(worksheet="Reembolsos", data=new_history)
                     
-                    # Gerar e enviar PDF
-                    pdf = gerar_pdf(colab, df_final['Data Solicitacao'].iloc[0], ajustados, total)
-                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab}", "Relatório gerado automaticamente.", pdf, lista_anexos)
+                    # Remover do Pendentes
+                    remaining_pend = df_pend[df_pend['Colaborador'] != colab_sel].astype(str).replace("nan", "")
+                    conn.update(worksheet="Pendentes", data=remaining_pend)
                     
-                    st.success("Aprovação concluída!")
+                    pdf = gerar_pdf(colab_sel, df_fin['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
+                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
+                    st.success("Tudo enviado!")
                     time.sleep(2)
                     st.rerun()
-            else:
-                st.info("Não há solicitações pendentes.")
-        except Exception as e:
-            st.warning("Aguardando dados da planilha...")
+                
+                if st.button("❌ Reprovar"):
+                    remaining_pend = df_pend[df_pend['Colaborador'] != colab_sel].astype(str).replace("nan", "")
+                    conn.update(worksheet="Pendentes", data=remaining_pend)
+                    st.error("Removido.")
+                    time.sleep(1)
+                    st.rerun()
+            else: st.info("Sem pendências.")
+        except Exception as e: 
+            st.info("Aguardando solicitações...")
+            # st.error(e) # Opcional para debug
