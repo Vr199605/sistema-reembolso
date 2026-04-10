@@ -121,7 +121,7 @@ with aba_guia:
         Preencha seu **nome completo** e a **data atual** da solicitação. 
         
         ### 2️⃣ Seleção de Categorias
-        Escolha todas as categorias que compõem sua despesa. Você pode selecionar várias ao mesmo tempo.
+        Escolha as categorias que compõem sua despesa. Você pode adicionar a mesma categoria várias vezes se necessário.
         
         ### 3️⃣ Detalhamento por Item
         Para cada categoria selecionada, informe:
@@ -162,25 +162,34 @@ with aba_solicitacao:
     with col_perfil2: data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
 
     categorias_disponiveis = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
-    selecionadas = st.multiselect("Selecione as categorias:", categorias_disponiveis)
+    
+    if 'lista_categorias' not in st.session_state:
+        st.session_state.lista_categorias = []
+
+    col_cat, col_add = st.columns([8, 2])
+    cat_selecionada = col_cat.selectbox("Escolha uma categoria para adicionar:", [""] + categorias_disponiveis)
+    if col_add.button("➕ Adicionar"):
+        if cat_selecionada:
+            st.session_state.lista_categorias.append(cat_selecionada)
+
     dados_despesas = []
 
-    if selecionadas:
-        for cat in selecionadas:
+    if st.session_state.lista_categorias:
+        for idx, cat in enumerate(st.session_state.lista_categorias):
             with st.container():
                 c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
                 c1.markdown(f"**{cat}**")
-                d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}")
+                d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}_{idx}")
                 if "KM (em qtde)" in cat:
-                    q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}")
+                    q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}_{idx}")
                     v_fin = (q_km * 1.37) if q_km else 0.0
                     if q_km: c3.info(f"R$ {v_fin:.2f}")
                 else:
-                    v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}")
+                    v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}_{idx}")
                     if "REFEIÇÃO" in cat: c3.markdown("**Limite até R$ 150**")
                     elif "ESTACIONAMENTO" in cat: c3.markdown("**Limite até R$ 70**")
                     v_fin = v_fin if v_fin else 0.0
-                mot = c4.text_input("Motivo *", key=f"m_{cat}")
+                mot = c4.text_input("Motivo *", key=f"m_{cat}_{idx}")
                 dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": float(v_fin), "Motivo": mot})
         
         st.subheader("Anexar Comprovantes")
@@ -218,7 +227,7 @@ with aba_solicitacao:
                         st.error(f"Erro ao salvar: {e}")
                         st.exception(e)
         with col_btn2:
-            if st.button("🗑️ Limpar Tudo"): reset_campos()
+            if st.button("♻️ Reciclar Ciclo"): reset_campos()
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
