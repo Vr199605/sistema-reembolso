@@ -219,7 +219,7 @@ with aba_solicitacao:
                         
                         conn.update(worksheet="Pendentes", data=combined)
                         
-                        enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"Nova solicitação de {nome}. Verifique na aba de Aprovação.")
+                        enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/")
                         st.success("Enviado!")
                         time.sleep(2)
                         reset_campos()
