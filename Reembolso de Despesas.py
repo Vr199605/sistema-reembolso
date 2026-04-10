@@ -175,9 +175,10 @@ with aba_solicitacao:
     dados_despesas = []
 
     if st.session_state.lista_categorias:
+        # Criamos uma cópia para evitar erro de índice ao remover itens durante o loop
         for idx, cat in enumerate(st.session_state.lista_categorias):
             with st.container():
-                c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
+                c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 4, 1])
                 c1.markdown(f"**{cat}**")
                 d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}_{idx}")
                 if "KM (em qtde)" in cat:
@@ -190,17 +191,31 @@ with aba_solicitacao:
                     elif "ESTACIONAMENTO" in cat: c3.markdown("**Limite até R$ 70**")
                     v_fin = v_fin if v_fin else 0.0
                 mot = c4.text_input("Motivo *", key=f"m_{cat}_{idx}")
+                
+                # Botão da Lixeira para excluir categoria específica
+                if c5.button("🗑️", key=f"del_{idx}"):
+                    st.session_state.lista_categorias.pop(idx)
+                    st.rerun()
+                
                 dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": float(v_fin), "Motivo": mot})
         
         st.subheader("Anexar Comprovantes")
         arq = st.file_uploader("Upload (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
 
         col_btn1, col_btn2 = st.columns([2, 8])
+        
+        # Lógica de confirmação para Envio
         with col_btn1:
             if st.button("Enviar Solicitação", use_container_width=True):
                 if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or not nome:
                     st.error("Preencha todos os campos.")
                 else:
+                    st.session_state.confirmar_envio = True
+
+            if st.session_state.get('confirmar_envio'):
+                st.warning("Você confirma o envio?")
+                conf_c1, conf_c2, _ = st.columns([1, 1, 8])
+                if conf_c1.button("Sim", key="conf_envio_sim"):
                     try:
                         caminhos_salvos = []
                         for f in arq:
@@ -213,21 +228,34 @@ with aba_solicitacao:
                         df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
                         df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
 
-                        # Garantir limpeza de dados para evitar Erro 500
                         existing = conn.read(worksheet="Pendentes").astype(str)
                         combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
-                        
                         conn.update(worksheet="Pendentes", data=combined)
                         
                         enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/")
                         st.success("Enviado!")
                         time.sleep(2)
+                        st.session_state.confirmar_envio = False
                         reset_campos()
                     except Exception as e: 
                         st.error(f"Erro ao salvar: {e}")
-                        st.exception(e)
+                if conf_c2.button("Não", key="conf_envio_nao"):
+                    st.session_state.confirmar_envio = False
+                    st.rerun()
+
+        # Lógica de confirmação para Reciclar Ciclo
         with col_btn2:
-            if st.button("♻️ Reciclar Ciclo"): reset_campos()
+            if st.button("♻️ Reciclar Ciclo"):
+                st.session_state.confirmar_reset = True
+            
+            if st.session_state.get('confirmar_reset'):
+                st.error("Você realmente deseja resetar?")
+                res_c1, res_c2, _ = st.columns([1, 1, 8])
+                if res_c1.button("Sim", key="conf_reset_sim"):
+                    reset_campos()
+                if res_c2.button("Não", key="conf_reset_nao"):
+                    st.session_state.confirmar_reset = False
+                    st.rerun()
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
@@ -290,4 +318,3 @@ with aba_aprovacao:
             else: st.info("Sem pendências.")
         except Exception as e: 
             st.info("Aguardando solicitações...")
-            # st.error(e) # Opcional para debug
