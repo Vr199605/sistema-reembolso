@@ -18,10 +18,16 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 
 # Configuração da página
 st.set_page_config(page_title="Sistema de Reembolso", layout="wide")
-# Configuração da página
-st.set_page_config(page_title="Sistema de Reembolso", layout="wide")
 
-# ---------------------------------------------------
+# --- BLOCO PARA OCULTAR ÍCONES E MENU ---
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
+
 # Criar pasta para anexos no servidor (necessário para o Gabriel baixar de outro PC)
 if not os.path.exists("comprovantes_servidor"):
     os.makedirs("comprovantes_servidor")
