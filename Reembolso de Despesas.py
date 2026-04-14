@@ -95,7 +95,6 @@ def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos
 
     if caminhos_anexos:
         for caminho in caminhos_anexos:
-            # Normalizar caminho para o e-mail também
             caminho_norm = os.path.normpath(caminho.replace("\\", "/"))
             if os.path.exists(caminho_norm):
                 with open(caminho_norm, "rb") as f:
@@ -240,7 +239,14 @@ with aba_solicitacao:
                         combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
                         conn.update(worksheet="Pendentes", data=combined)
                         
-                        enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/")
+                        # ALTERAÇÃO AQUI: Agora passamos 'caminhos_anexos=caminhos_salvos' para o Gabriel receber os arquivos
+                        enviar_email_com_pdf(
+                            "gabriel.coelho@globusseguros.com.br", 
+                            f"Solicitação: {nome}", 
+                            f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/",
+                            caminhos_anexos=caminhos_salvos
+                        )
+                        
                         st.success("Enviado!")
                         time.sleep(2)
                         st.session_state.confirmar_envio = False
@@ -280,9 +286,7 @@ with aba_aprovacao:
                 if lista_anexos:
                     c_anexos = st.columns(len(lista_anexos))
                     for i, p in enumerate(lista_anexos):
-                        # CORREÇÃO: Normalizar o caminho (substituir \ por / e garantir padrão do SO)
                         p_norm = os.path.normpath(p.replace("\\", "/"))
-                        
                         if os.path.exists(p_norm):
                             with open(p_norm, "rb") as f_down:
                                 c_anexos[i].download_button(
@@ -292,7 +296,6 @@ with aba_aprovacao:
                                     key=f"dl_{colab_sel}_{i}_{time.time()}"
                                 )
                         else:
-                            # AVISO: Se o arquivo sumiu do servidor (comum no Streamlit Cloud)
                             c_anexos[i].warning("⚠️ Arquivo expirou no servidor")
                 
                 dados_ajustados = []
@@ -321,7 +324,6 @@ with aba_aprovacao:
                     conn.update(worksheet="Pendentes", data=remaining_pend)
                     
                     pdf = gerar_pdf(colab_sel, df_fin['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
-                    # Envia os anexos limpos e validados por e-mail
                     enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
                     st.success("Tudo enviado!")
                     time.sleep(2)
