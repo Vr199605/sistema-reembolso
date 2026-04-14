@@ -28,7 +28,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Criar pasta para anexos no servidor (necessário para o Gabriel baixar de outro PC)
+# Criar pasta para anexos no servidor
 if not os.path.exists("comprovantes_servidor"):
     os.makedirs("comprovantes_servidor")
 
@@ -95,10 +95,12 @@ def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos
 
     if caminhos_anexos:
         for caminho in caminhos_anexos:
-            if os.path.exists(caminho):
-                with open(caminho, "rb") as f:
-                    part = MIMEApplication(f.read(), Name=os.path.basename(caminho))
-                    part['Content-Disposition'] = f'attachment; filename="{os.path.basename(caminho)}"'
+            # Normalizar caminho para o e-mail também
+            caminho_norm = os.path.normpath(caminho.replace("\\", "/"))
+            if os.path.exists(caminho_norm):
+                with open(caminho_norm, "rb") as f:
+                    part = MIMEApplication(f.read(), Name=os.path.basename(caminho_norm))
+                    part['Content-Disposition'] = f'attachment; filename="{os.path.basename(caminho_norm)}"'
                     msg.attach(part)
     
     try:
@@ -184,7 +186,6 @@ with aba_solicitacao:
     dados_despesas = []
 
     if st.session_state.lista_categorias:
-        # Criamos uma cópia para evitar erro de índice ao remover itens durante o loop
         for idx, cat in enumerate(st.session_state.lista_categorias):
             with st.container():
                 c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 4, 1])
@@ -201,7 +202,6 @@ with aba_solicitacao:
                     v_fin = v_fin if v_fin else 0.0
                 mot = c4.text_input("Motivo *", key=f"m_{cat}_{idx}")
                 
-                # Botão da Lixeira para excluir categoria específica
                 if c5.button("🗑️", key=f"del_{idx}"):
                     st.session_state.lista_categorias.pop(idx)
                     st.rerun()
@@ -213,7 +213,6 @@ with aba_solicitacao:
 
         col_btn1, col_btn2 = st.columns([2, 8])
         
-        # Lógica de confirmação para Envio
         with col_btn1:
             if st.button("Enviar Solicitação", use_container_width=True):
                 if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or not nome:
@@ -252,7 +251,6 @@ with aba_solicitacao:
                     st.session_state.confirmar_envio = False
                     st.rerun()
 
-        # Lógica de confirmação para Reciclar Ciclo
         with col_btn2:
             if st.button("♻️ Reciclar Ciclo"):
                 st.session_state.confirmar_reset = True
@@ -277,16 +275,25 @@ with aba_aprovacao:
                 
                 st.subheader("📁 Verificação de Comprovantes")
                 string_anexos = str(dados_f.iloc[0]['Caminhos_Anexos']) if 'Caminhos_Anexos' in dados_f.columns else ""
-                # CORREÇÃO: Limpando espaços e filtrando vazios para garantir que o path seja válido
                 lista_anexos = [p.strip() for p in string_anexos.split("|") if p.strip() and p.strip() != "nan"]
                 
                 if lista_anexos:
                     c_anexos = st.columns(len(lista_anexos))
                     for i, p in enumerate(lista_anexos):
-                        if os.path.exists(p):
-                            with open(p, "rb") as f_down:
-                                # CORREÇÃO: Adicionada 'key' única para o botão aparecer corretamente
-                                c_anexos[i].download_button(label=f"📄 Anexo {i+1}", data=f_down, file_name=os.path.basename(p), key=f"btn_download_{colab_sel}_{i}")
+                        # CORREÇÃO: Normalizar o caminho (substituir \ por / e garantir padrão do SO)
+                        p_norm = os.path.normpath(p.replace("\\", "/"))
+                        
+                        if os.path.exists(p_norm):
+                            with open(p_norm, "rb") as f_down:
+                                c_anexos[i].download_button(
+                                    label=f"📄 Anexo {i+1}", 
+                                    data=f_down, 
+                                    file_name=os.path.basename(p_norm), 
+                                    key=f"dl_{colab_sel}_{i}_{time.time()}"
+                                )
+                        else:
+                            # AVISO: Se o arquivo sumiu do servidor (comum no Streamlit Cloud)
+                            c_anexos[i].warning("⚠️ Arquivo expirou no servidor")
                 
                 dados_ajustados = []
                 for i, row in dados_f.iterrows():
@@ -310,12 +317,11 @@ with aba_aprovacao:
                     new_history = pd.concat([ex_of, df_fin.astype(str)], ignore_index=True).replace("nan", "")
                     conn.update(worksheet="Reembolsos", data=new_history)
                     
-                    # Remover do Pendentes
                     remaining_pend = df_pend[df_pend['Colaborador'] != colab_sel].astype(str).replace("nan", "")
                     conn.update(worksheet="Pendentes", data=remaining_pend)
                     
                     pdf = gerar_pdf(colab_sel, df_fin['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
-                    # O envio agora utiliza a 'lista_anexos' limpa e validada acima
+                    # Envia os anexos limpos e validados por e-mail
                     enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
                     st.success("Tudo enviado!")
                     time.sleep(2)
