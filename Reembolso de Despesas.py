@@ -277,14 +277,16 @@ with aba_aprovacao:
                 
                 st.subheader("📁 Verificação de Comprovantes")
                 string_anexos = str(dados_f.iloc[0]['Caminhos_Anexos']) if 'Caminhos_Anexos' in dados_f.columns else ""
-                lista_anexos = string_anexos.split("|") if (string_anexos and string_anexos != "nan") else []
+                # CORREÇÃO: Limpando espaços e filtrando vazios para garantir que o path seja válido
+                lista_anexos = [p.strip() for p in string_anexos.split("|") if p.strip() and p.strip() != "nan"]
                 
                 if lista_anexos:
                     c_anexos = st.columns(len(lista_anexos))
                     for i, p in enumerate(lista_anexos):
                         if os.path.exists(p):
                             with open(p, "rb") as f_down:
-                                c_anexos[i].download_button(label=f"📄 Anexo {i+1}", data=f_down, file_name=os.path.basename(p))
+                                # CORREÇÃO: Adicionada 'key' única para o botão aparecer corretamente
+                                c_anexos[i].download_button(label=f"📄 Anexo {i+1}", data=f_down, file_name=os.path.basename(p), key=f"btn_download_{colab_sel}_{i}")
                 
                 dados_ajustados = []
                 for i, row in dados_f.iterrows():
@@ -313,6 +315,7 @@ with aba_aprovacao:
                     conn.update(worksheet="Pendentes", data=remaining_pend)
                     
                     pdf = gerar_pdf(colab_sel, df_fin['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
+                    # O envio agora utiliza a 'lista_anexos' limpa e validada acima
                     enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
                     st.success("Tudo enviado!")
                     time.sleep(2)
