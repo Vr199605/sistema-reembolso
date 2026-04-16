@@ -38,7 +38,7 @@ try:
 except Exception as e:
     st.error(f"Erro na conexão com Planilha: {e}")
 
-# --- FUNÇÃO PARA BUSCA INTELIGENTE ---
+# --- FUNÇÃO PARA BUSCA INTELIGENTE (NOVO) ---
 @st.cache_data(ttl=600)
 def carregar_base_funcionarios():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQWoetqtPPgSLJu3bBzYNo8Avaa3DGCsenQ1yrtzYrdU48J9-SzK8gkHkCyAk6L1fJkPyCgFxKdO9Se/pub?output=csv"
@@ -87,7 +87,7 @@ def gerar_pdf(nome, data_sol, dados_tabela, total):
     buffer.seek(0)
     return buffer
 
-# --- FUNÇÕES DE E-MAIL ---
+# --- FUNÇÕES DE E-MAIL (SUPORTE A MÚLTIPLOS ANEXOS) ---
 def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos_anexos=None):
     seu_email = "victormoreiraicnv@gmail.com"
     senha_app = "odym ioqm ybew ejnn"
@@ -98,7 +98,6 @@ def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos
     msg.attach(MIMEText(corpo, 'plain'))
     
     if pdf_buffer:
-        pdf_buffer.seek(0)
         part = MIMEApplication(pdf_buffer.read(), Name="reembolso_aprovado.pdf")
         part['Content-Disposition'] = 'attachment; filename="reembolso_aprovado.pdf"'
         msg.attach(part)
@@ -119,9 +118,7 @@ def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos
         server.send_message(msg)
         server.quit()
         return True
-    except Exception as e:
-        print(f"Erro e-mail: {e}")
-        return False
+    except: return False
 
 # --- FUNÇÃO DE RESET ---
 def reset_campos():
@@ -140,7 +137,7 @@ with aba_guia:
     with col1:
         st.markdown("""
         ### 1️⃣ Identificação
-        Preencha seu **nome completo**, **e-mail** e a **data atual** da solicitação. 
+        Preencha seu **nome completo** e a **data atual** da solicitação. 
         
         ### 2️⃣ Seleção de Categorias
         Escolha as categorias que compõem sua despesa. Você pode adicionar a mesma categoria várias vezes se necessário.
@@ -180,17 +177,18 @@ with aba_solicitacao:
     st.title("🚀 Solicitação de Reembolso de Despesas")
     st.markdown("---")
     
+    # --- CARREGAR BASE PARA BUSCA INTELIGENTE ---
     df_base = carregar_base_funcionarios()
+    # CORREÇÃO DO ERRO: Filtra valores nulos (dropna) para que o sorted funcione
     lista_nomes = sorted(df_base['Nome do Funcionário'].dropna().unique().tolist()) if not df_base.empty else []
 
-    col_perfil1, col_perfil2, col_perfil3 = st.columns(3)
+    col_perfil1, col_perfil2 = st.columns(2)
     with col_perfil1: 
         nome = st.selectbox("Selecione seu Nome Completo", options=[""] + lista_nomes, key="nome_user")
-    with col_perfil2:
-        email_colab = st.text_input("Seu E-mail (Para receber o status)", key="email_user")
-    with col_perfil3: 
+    with col_perfil2: 
         data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
 
+    # --- IDENTIFICAÇÃO AUTOMÁTICA DOS DADOS ---
     centro_custo, setor, departamento = "", "", ""
     if nome != "":
         dados_func = df_base[df_base['Nome do Funcionário'] == nome].iloc[0]
@@ -242,8 +240,8 @@ with aba_solicitacao:
         
         with col_btn1:
             if st.button("Enviar Solicitação", use_container_width=True):
-                if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or nome == "" or email_colab == "":
-                    st.error("Preencha todos os campos, incluindo seu e-mail.")
+                if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or nome == "":
+                    st.error("Preencha todos os campos e selecione seu nome.")
                 else:
                     st.session_state.confirmar_envio = True
 
@@ -260,7 +258,6 @@ with aba_solicitacao:
 
                         df_p = pd.DataFrame(dados_despesas)
                         df_p['Colaborador'] = nome
-                        df_p['Email_Colaborador'] = email_colab
                         df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
                         df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
                         df_p['SETOR'] = setor
@@ -273,12 +270,12 @@ with aba_solicitacao:
                         
                         enviar_email_com_pdf(
                             "gabriel.coelho@globusseguros.com.br", 
-                            f"Nova Solicitação: {nome}", 
-                            f"Nova solicitação de {nome}. Verifique no sistema.",
+                            f"Solicitação: {nome}", 
+                            f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/",
                             caminhos_anexos=caminhos_salvos
                         )
                         
-                        st.success("Enviado com sucesso!")
+                        st.success("Enviado!")
                         time.sleep(2)
                         st.session_state.confirmar_envio = False
                         reset_campos()
@@ -309,7 +306,6 @@ with aba_aprovacao:
             if not df_pend.empty:
                 colab_sel = st.selectbox("Escolha o colaborador:", df_pend['Colaborador'].unique())
                 dados_f = df_pend[df_pend['Colaborador'] == colab_sel]
-                email_destino = dados_f.iloc[0]['Email_Colaborador'] if 'Email_Colaborador' in dados_f.columns else None
                 
                 st.subheader("📁 Verificação de Comprovantes")
                 string_anexos = str(dados_f.iloc[0]['Caminhos_Anexos']) if 'Caminhos_Anexos' in dados_f.columns else ""
@@ -328,7 +324,7 @@ with aba_aprovacao:
                                     key=f"dl_{colab_sel}_{i}_{time.time()}"
                                 )
                         else:
-                            c_anexos[i].warning("⚠️ Arquivo expirou")
+                            c_anexos[i].warning("⚠️ Arquivo expirou no servidor")
                 
                 dados_ajustados = []
                 for i, row in dados_f.iterrows():
@@ -343,7 +339,7 @@ with aba_aprovacao:
                 total_adj = sum(d["Valor Total"] for d in dados_ajustados)
                 st.metric("Total Final", f"R$ {total_adj:.2f}")
 
-                if st.button("✅ Aprovar e Notificar Colaborador"):
+                if st.button("✅ Aprovar e Enviar E-mail com Anexos"):
                     df_fin = pd.DataFrame(dados_ajustados)
                     df_fin['Colaborador'] = colab_sel
                     df_fin['Data Solicitacao'] = dados_f.iloc[0]['Data Solicitacao']
@@ -356,27 +352,16 @@ with aba_aprovacao:
                     conn.update(worksheet="Pendentes", data=remaining_pend)
                     
                     pdf = gerar_pdf(colab_sel, df_fin['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
-                    
-                    # Notificar Gabriel
-                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório em anexo.", pdf, lista_anexos)
-                    
-                    # Notificar Colaborador
-                    if email_destino:
-                        enviar_email_com_pdf(email_destino, "Status de Reembolso - Aprovado", "Solicitação de reembolso aprovada. Aguarde e seu pagamento será efetuado!")
-                    
-                    st.success("Aprovado e Notificado!")
+                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
+                    st.success("Tudo enviado!")
                     time.sleep(2)
                     st.rerun()
                 
-                if st.button("❌ Reprovar e Notificar Colaborador"):
+                if st.button("❌ Reprovar"):
                     remaining_pend = df_pend[df_pend['Colaborador'] != colab_sel].astype(str).replace("nan", "")
                     conn.update(worksheet="Pendentes", data=remaining_pend)
-                    
-                    if email_destino:
-                        enviar_email_com_pdf(email_destino, "Status de Reembolso - Recusado", "Sua solicitação de reembolso foi recusada. O financeiro entrará em contato para ajustes e, caso seja necessário, deverá passar por aprovação de seu gestor.")
-                    
-                    st.error("Reprovado e Notificado.")
-                    time.sleep(2)
+                    st.error("Removido.")
+                    time.sleep(1)
                     st.rerun()
             else: st.info("Sem pendências.")
         except Exception as e: 
