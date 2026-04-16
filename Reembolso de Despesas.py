@@ -38,9 +38,9 @@ try:
 except Exception as e:
     st.error(f"Erro na conexão com Planilha: {e}")
 
-# --- FUNÇÃO PARA CARREGAR DADOS DOS FUNCIONÁRIOS (NOVO) ---
+# --- FUNÇÃO PARA BUSCA INTELIGENTE (NOVO) ---
 @st.cache_data(ttl=600)
-def carregar_dados_funcionarios():
+def carregar_base_funcionarios():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQWoetqtPPgSLJu3bBzYNo8Avaa3DGCsenQ1yrtzYrdU48J9-SzK8gkHkCyAk6L1fJkPyCgFxKdO9Se/pub?output=csv"
     try:
         return pd.read_csv(url)
@@ -177,27 +177,25 @@ with aba_solicitacao:
     st.title("🚀 Solicitação de Reembolso de Despesas")
     st.markdown("---")
     
-    # Carrega base de funcionários
-    df_funcionarios = carregar_dados_funcionarios()
-    
+    # --- CARREGAR BASE PARA BUSCA INTELIGENTE ---
+    df_base = carregar_base_funcionarios()
+    lista_nomes = sorted(df_base['Nome do Funcionário'].unique().tolist()) if not df_base.empty else []
+
     col_perfil1, col_perfil2 = st.columns(2)
     with col_perfil1: 
-        nome = st.text_input("Nome completo", key="nome_user")
+        # Substituído text_input por selectbox para busca inteligente
+        nome = st.selectbox("Selecione seu Nome Completo", options=[""] + lista_nomes, key="nome_user")
     with col_perfil2: 
         data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
 
-    # --- LÓGICA DE IDENTIFICAÇÃO AUTOMÁTICA (NOVO) ---
+    # --- IDENTIFICAÇÃO AUTOMÁTICA DOS DADOS ---
     centro_custo, setor, departamento = "", "", ""
-    if nome and not df_funcionarios.empty:
-        # Busca exata ignorando maiúsculas/minúsculas
-        match = df_funcionarios[df_funcionarios['Nome do Funcionário'].str.lower() == nome.lower()]
-        if not match.empty:
-            centro_custo = match.iloc[0]['Centro de Custo']
-            setor = match.iloc[0]['SETOR']
-            departamento = match.iloc[0]['DEPARTAMENTO']
-            st.success(f"✅ Funcionário identificado: {setor} | {departamento} | {centro_custo}")
-        else:
-            st.warning("⚠️ Nome não encontrado na base de dados.")
+    if nome != "":
+        dados_func = df_base[df_base['Nome do Funcionário'] == nome].iloc[0]
+        centro_custo = dados_func['Centro de Custo']
+        setor = dados_func['SETOR']
+        departamento = dados_func['DEPARTAMENTO']
+        st.success(f"📌 **Dados Identificados:** Setor: {setor} | CC: {centro_custo}")
 
     categorias_disponiveis = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
     
@@ -242,8 +240,8 @@ with aba_solicitacao:
         
         with col_btn1:
             if st.button("Enviar Solicitação", use_container_width=True):
-                if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or not nome:
-                    st.error("Preencha todos os campos.")
+                if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or nome == "":
+                    st.error("Preencha todos os campos e selecione seu nome.")
                 else:
                     st.session_state.confirmar_envio = True
 
@@ -262,10 +260,10 @@ with aba_solicitacao:
                         df_p['Colaborador'] = nome
                         df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
                         df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
-                        # Salva também os dados automáticos
+                        # Adicionando os campos automáticos ao envio
+                        df_p['SETOR'] = setor
+                        df_p['DEPARTAMENTO'] = departamento
                         df_p['Centro de Custo'] = centro_custo
-                        df_p['Setor'] = setor
-                        df_p['Departamento'] = departamento
 
                         existing = conn.read(worksheet="Pendentes").astype(str)
                         combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
@@ -274,7 +272,7 @@ with aba_solicitacao:
                         enviar_email_com_pdf(
                             "gabriel.coelho@globusseguros.com.br", 
                             f"Solicitação: {nome}", 
-                            f"Nova solicitação de {nome}. Setor: {setor}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/",
+                            f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/",
                             caminhos_anexos=caminhos_salvos
                         )
                         
@@ -346,11 +344,6 @@ with aba_aprovacao:
                     df_fin = pd.DataFrame(dados_ajustados)
                     df_fin['Colaborador'] = colab_sel
                     df_fin['Data Solicitacao'] = dados_f.iloc[0]['Data Solicitacao']
-                    # Garante que os dados de centro de custo sigam para o histórico
-                    if 'Centro de Custo' in dados_f.columns:
-                        df_fin['Centro de Custo'] = dados_f.iloc[0]['Centro de Custo']
-                        df_fin['Setor'] = dados_f.iloc[0]['Setor']
-                        df_fin['Departamento'] = dados_f.iloc[0]['Departamento']
                     
                     ex_of = conn.read(worksheet="Reembolsos").astype(str)
                     new_history = pd.concat([ex_of, df_fin.astype(str)], ignore_index=True).replace("nan", "")
