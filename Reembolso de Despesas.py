@@ -179,11 +179,11 @@ with aba_solicitacao:
     
     # --- CARREGAR BASE PARA BUSCA INTELIGENTE ---
     df_base = carregar_base_funcionarios()
-    lista_nomes = sorted(df_base['Nome do Funcionário'].unique().tolist()) if not df_base.empty else []
+    # CORREÇÃO DO ERRO: Filtra valores nulos (dropna) para que o sorted funcione
+    lista_nomes = sorted(df_base['Nome do Funcionário'].dropna().unique().tolist()) if not df_base.empty else []
 
     col_perfil1, col_perfil2 = st.columns(2)
     with col_perfil1: 
-        # Substituído text_input por selectbox para busca inteligente
         nome = st.selectbox("Selecione seu Nome Completo", options=[""] + lista_nomes, key="nome_user")
     with col_perfil2: 
         data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
@@ -260,7 +260,6 @@ with aba_solicitacao:
                         df_p['Colaborador'] = nome
                         df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
                         df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
-                        # Adicionando os campos automáticos ao envio
                         df_p['SETOR'] = setor
                         df_p['DEPARTAMENTO'] = departamento
                         df_p['Centro de Custo'] = centro_custo
