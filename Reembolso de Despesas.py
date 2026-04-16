@@ -38,6 +38,15 @@ try:
 except Exception as e:
     st.error(f"Erro na conexão com Planilha: {e}")
 
+# --- FUNÇÃO PARA CARREGAR DADOS DOS FUNCIONÁRIOS (NOVO) ---
+@st.cache_data(ttl=600)
+def carregar_dados_funcionarios():
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQWoetqtPPgSLJu3bBzYNo8Avaa3DGCsenQ1yrtzYrdU48J9-SzK8gkHkCyAk6L1fJkPyCgFxKdO9Se/pub?output=csv"
+    try:
+        return pd.read_csv(url)
+    except:
+        return pd.DataFrame()
+
 # --- FUNÇÃO GERAR PDF (REPORTLAB) ---
 def gerar_pdf(nome, data_sol, dados_tabela, total):
     buffer = io.BytesIO()
@@ -167,9 +176,28 @@ with aba_guia:
 with aba_solicitacao:
     st.title("🚀 Solicitação de Reembolso de Despesas")
     st.markdown("---")
+    
+    # Carrega base de funcionários
+    df_funcionarios = carregar_dados_funcionarios()
+    
     col_perfil1, col_perfil2 = st.columns(2)
-    with col_perfil1: nome = st.text_input("Nome completo", key="nome_user")
-    with col_perfil2: data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
+    with col_perfil1: 
+        nome = st.text_input("Nome completo", key="nome_user")
+    with col_perfil2: 
+        data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
+
+    # --- LÓGICA DE IDENTIFICAÇÃO AUTOMÁTICA (NOVO) ---
+    centro_custo, setor, departamento = "", "", ""
+    if nome and not df_funcionarios.empty:
+        # Busca exata ignorando maiúsculas/minúsculas
+        match = df_funcionarios[df_funcionarios['Nome do Funcionário'].str.lower() == nome.lower()]
+        if not match.empty:
+            centro_custo = match.iloc[0]['Centro de Custo']
+            setor = match.iloc[0]['SETOR']
+            departamento = match.iloc[0]['DEPARTAMENTO']
+            st.success(f"✅ Funcionário identificado: {setor} | {departamento} | {centro_custo}")
+        else:
+            st.warning("⚠️ Nome não encontrado na base de dados.")
 
     categorias_disponiveis = ["ESTACIONAMENTO (em R$)", "PEDÁGIO (em qtde)", "KM (em qtde)", "REPRESENTAÇÃO (em R$)", "TAXI / UBER (em R$)", "REFEIÇÃO VIAGEM (em R$)", "OUTROS* (em R$)"]
     
@@ -234,16 +262,19 @@ with aba_solicitacao:
                         df_p['Colaborador'] = nome
                         df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
                         df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
+                        # Salva também os dados automáticos
+                        df_p['Centro de Custo'] = centro_custo
+                        df_p['Setor'] = setor
+                        df_p['Departamento'] = departamento
 
                         existing = conn.read(worksheet="Pendentes").astype(str)
                         combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
                         conn.update(worksheet="Pendentes", data=combined)
                         
-                        # ALTERAÇÃO AQUI: Agora passamos 'caminhos_anexos=caminhos_salvos' para o Gabriel receber os arquivos
                         enviar_email_com_pdf(
                             "gabriel.coelho@globusseguros.com.br", 
                             f"Solicitação: {nome}", 
-                            f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/",
+                            f"Nova solicitação de {nome}. Setor: {setor}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/",
                             caminhos_anexos=caminhos_salvos
                         )
                         
@@ -315,6 +346,11 @@ with aba_aprovacao:
                     df_fin = pd.DataFrame(dados_ajustados)
                     df_fin['Colaborador'] = colab_sel
                     df_fin['Data Solicitacao'] = dados_f.iloc[0]['Data Solicitacao']
+                    # Garante que os dados de centro de custo sigam para o histórico
+                    if 'Centro de Custo' in dados_f.columns:
+                        df_fin['Centro de Custo'] = dados_f.iloc[0]['Centro de Custo']
+                        df_fin['Setor'] = dados_f.iloc[0]['Setor']
+                        df_fin['Departamento'] = dados_f.iloc[0]['Departamento']
                     
                     ex_of = conn.read(worksheet="Reembolsos").astype(str)
                     new_history = pd.concat([ex_of, df_fin.astype(str)], ignore_index=True).replace("nan", "")
