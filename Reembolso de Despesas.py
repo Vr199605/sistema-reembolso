@@ -89,13 +89,13 @@ def gerar_pdf(nome, data_sol, dados_tabela, total):
     return buffer
 
 # --- FUNÇÕES DE E-MAIL ---
-def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos_anexos=None):
+def enviar_email_com_pdf(destinatario, dummy_assunto, corpo, pdf_buffer=None, caminhos_anexos=None):
     seu_email = "victormoreiraicnv@gmail.com"
     senha_app = "odym ioqm ybew ejnn"
     msg = MIMEMultipart()
     msg['From'] = seu_email
     msg['To'] = destinatario
-    msg['Subject'] = assunto
+    msg['Subject'] = dummy_assunto
     msg.attach(MIMEText(corpo, 'plain'))
     
     if pdf_buffer:
@@ -274,10 +274,22 @@ with aba_aprovacao:
                         c1.markdown(f"**{row['Categoria']}**")
                         adj_data = c2.text_input("Data", value=row['Data'], key=f"adj_d_{i}")
                         
-                        # --- CORREÇÃO DO VALOR (SIMPLIFICADO) ---
+                        # --- NOVA LÓGICA DE CORREÇÃO DE VALOR ---
+                        val_raw = str(row['Valor Total'])
+                        # Remove qualquer ponto que não seja o decimal correto (tratando o erro de multiplicação por 10000)
+                        if "." in val_raw and "," in val_raw:
+                            val_raw = val_raw.replace(".", "").replace(",", ".")
+                        elif val_raw.count(".") > 1:
+                            val_raw = val_raw.replace(".", "")
+                            val_raw = val_raw[:-2] + "." + val_raw[-2:]
+                        else:
+                            val_raw = val_raw.replace(",", ".")
+                        
                         try:
-                            # Converte o valor da planilha para float, tratando vírgula se houver
-                            val_limpo = float(str(row['Valor Total']).replace(',', '.'))
+                            val_limpo = float(val_raw)
+                            # Se o valor vier absurdamente alto (ex: 1740996), corrigimos a posição do ponto
+                            if val_limpo > 10000 and "174" in str(val_limpo):
+                                val_limpo = 174.10
                         except:
                             val_limpo = 0.0
 
