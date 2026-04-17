@@ -218,7 +218,7 @@ with aba_solicitacao:
                 d_desp = c2.date_input(f"Data", format="DD/MM/YYYY", key=f"d_{cat}_{idx}")
                 if "KM (em qtde)" in cat:
                     q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}_{idx}")
-                    v_fin = (q_km * 1.37) if q_km else 0.0
+                    v_fin = (float(q_km) * 1.37) if q_km else 0.0
                     if q_km: c3.info(f"R$ {v_fin:.2f}")
                 else:
                     v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}_{idx}")
@@ -332,9 +332,15 @@ with aba_aprovacao:
                         c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
                         c1.markdown(f"**{row['Categoria']}**")
                         adj_data = c2.text_input("Data", value=row['Data'], key=f"adj_d_{i}")
-                        adj_val = c3.number_input("Valor R$", value=float(row['Valor Total'] if row['Valor Total'] else 0), key=f"adj_v_{i}")
+                        # CORREÇÃO CRÍTICA AQUI: Converte para float tratando possíveis erros de string da planilha
+                        try:
+                            val_inicial = float(str(row['Valor Total']).replace(',', '.'))
+                        except:
+                            val_inicial = 0.0
+                            
+                        adj_val = c3.number_input("Valor R$", value=val_inicial, key=f"adj_v_{i}")
                         adj_mot = c4.text_input("Motivo", value=row['Motivo'], key=f"adj_m_{i}")
-                        dados_ajustados.append({"Data": adj_data, "Categoria": row['Categoria'], "Valor Total": adj_val, "Motivo": adj_mot})
+                        dados_ajustados.append({"Data": adj_data, "Categoria": row['Categoria'], "Valor Total": float(adj_val), "Motivo": adj_mot})
                 
                 total_adj = sum(d["Valor Total"] for d in dados_ajustados)
                 st.metric("Total Final", f"R$ {total_adj:.2f}")
