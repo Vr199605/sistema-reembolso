@@ -274,19 +274,12 @@ with aba_aprovacao:
                         c1.markdown(f"**{row['Categoria']}**")
                         adj_data = c2.text_input("Data", value=row['Data'], key=f"adj_d_{i}")
                         
-                        # --- LIMPEZA RADICAL DE VALORES (REGEX) ---
-                        val_raw = str(row['Valor Total']).replace(',', '.')
-                        match = re.search(r'^(\d+\.\d{1,2})', val_raw)
-                        if match:
-                            val_limpo = float(match.group(1))
-                        else:
-                            try:
-                                temp = val_raw.split('.')[0]
-                                if len(temp) > 5:
-                                    val_limpo = float(temp[:4]) / 100
-                                else:
-                                    val_limpo = float(val_raw)
-                            except: val_limpo = 0.0
+                        # --- CORREÇÃO DO VALOR (SIMPLIFICADO) ---
+                        try:
+                            # Converte o valor da planilha para float, tratando vírgula se houver
+                            val_limpo = float(str(row['Valor Total']).replace(',', '.'))
+                        except:
+                            val_limpo = 0.0
 
                         adj_val = c3.number_input("Valor R$", value=val_limpo, format="%.2f", key=f"adj_v_{i}")
                         adj_mot = c4.text_input("Motivo", value=row['Motivo'], key=f"adj_m_{i}")
