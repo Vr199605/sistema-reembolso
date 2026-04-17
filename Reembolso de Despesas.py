@@ -201,6 +201,7 @@ with aba_solicitacao:
                 if "KM (em qtde)" in cat:
                     q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}_{idx}")
                     v_fin = (float(q_km) * 1.37) if q_km else 0.0
+                    if q_km: c3.info(f"R$ {v_fin:.2f}")
                 else:
                     v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}_{idx}")
                     v_fin = v_fin if v_fin else 0.0
@@ -210,10 +211,14 @@ with aba_solicitacao:
                     st.rerun()
                 dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": float(v_fin), "Motivo": mot})
         
-        arq = st.file_uploader("Upload (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
-        if st.button("Enviar Solicitação"):
+        st.markdown("---")
+        total_solicitacao = sum(d["Valor Total"] for d in dados_despesas)
+        st.subheader(f"💰 Total da Solicitação: R$ {total_solicitacao:.2f}")
+
+        arq = st.file_uploader("Upload de Comprovantes (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+        if st.button("Enviar Solicitação", use_container_width=True):
             if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or nome == "":
-                st.error("Preencha tudo!")
+                st.error("Preencha todos os campos e anexe os comprovantes!")
             else:
                 st.session_state.confirmar_envio = True
 
@@ -239,7 +244,7 @@ with aba_solicitacao:
                     conn.update(worksheet="Pendentes", data=combined)
                     
                     enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", "Nova solicitação disponível.", caminhos_anexos=caminhos_salvos)
-                    st.success("Enviado!")
+                    st.success("Enviado com sucesso!")
                     time.sleep(2)
                     reset_campos()
                 except Exception as e: st.error(f"Erro: {e}")
@@ -271,15 +276,13 @@ with aba_aprovacao:
                         
                         # --- LIMPEZA RADICAL DE VALORES (REGEX) ---
                         val_raw = str(row['Valor Total']).replace(',', '.')
-                        # Pega apenas os números antes de uma sequência repetitiva de zeros (ou o número todo se for normal)
                         match = re.search(r'^(\d+\.\d{1,2})', val_raw)
                         if match:
                             val_limpo = float(match.group(1))
                         else:
-                            # Se não encontrar o padrão, remove pontos de milhar e tenta converter
                             try:
-                                temp = val_raw.split('.')[0] # Pega a parte inteira
-                                if len(temp) > 5: # Se tiver mais de 5 dígitos e termina em 000..., reduz
+                                temp = val_raw.split('.')[0]
+                                if len(temp) > 5:
                                     val_limpo = float(temp[:4]) / 100
                                 else:
                                     val_limpo = float(val_raw)
