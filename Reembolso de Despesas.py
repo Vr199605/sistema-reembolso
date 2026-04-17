@@ -4,6 +4,7 @@ from datetime import datetime
 import smtplib
 import io
 import os
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -38,7 +39,7 @@ try:
 except Exception as e:
     st.error(f"Erro na conexão com Planilha: {e}")
 
-# --- FUNÇÃO PARA BUSCA INTELIGENTE (NOVO) ---
+# --- FUNÇÃO PARA BUSCA INTELIGENTE ---
 @st.cache_data(ttl=600)
 def carregar_base_funcionarios():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQWoetqtPPgSLJu3bBzYNo8Avaa3DGCsenQ1yrtzYrdU48J9-SzK8gkHkCyAk6L1fJkPyCgFxKdO9Se/pub?output=csv"
@@ -47,7 +48,7 @@ def carregar_base_funcionarios():
     except:
         return pd.DataFrame()
 
-# --- FUNÇÃO GERAR PDF (REPORTLAB) ---
+# --- FUNÇÃO GERAR PDF ---
 def gerar_pdf(nome, data_sol, dados_tabela, total):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
@@ -87,7 +88,7 @@ def gerar_pdf(nome, data_sol, dados_tabela, total):
     buffer.seek(0)
     return buffer
 
-# --- FUNÇÕES DE E-MAIL (SUPORTE A MÚLTIPLOS ANEXOS) ---
+# --- FUNÇÕES DE E-MAIL ---
 def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos_anexos=None):
     seu_email = "victormoreiraicnv@gmail.com"
     senha_app = "odym ioqm ybew ejnn"
@@ -120,7 +121,6 @@ def enviar_email_com_pdf(destinatario, assunto, corpo, pdf_buffer=None, caminhos
         return True
     except: return False
 
-# --- FUNÇÃO DE RESET ---
 def reset_campos():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
@@ -132,51 +132,37 @@ aba_guia, aba_solicitacao, aba_aprovacao = st.tabs(["📖 Guia Passo a Passo", "
 with aba_guia:
     st.header("📖 Guia de Preenchimento de Reembolso")
     st.info("Siga os passos abaixo para garantir que sua solicitação seja processada sem erros.")
-    
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("""
         ### 1️⃣ Identificação
         Preencha seu **nome completo** e a **data atual** da solicitação. 
-        
         ### 2️⃣ Seleção de Categorias
-        Escolha as categorias que compõem sua despesa. Você pode adicionar a mesma categoria várias vezes se necessário.
-        
+        Escolha as categorias que compõem sua despesa.
         ### 3️⃣ Detalhamento por Item
-        Para cada categoria selecionada, informe:
-        * **Data da despesa**: O dia em que o gasto ocorreu.
-        * **Valor/Quantidade**: Se for KM, informe a distância. O sistema calcula o valor automaticamente.
-        * **Motivo**: Descreva brevemente a finalidade do gasto (campo obrigatório).
+        Para cada categoria, informe a data, o valor/quantidade e o motivo.
         """)
-    
     with col2:
         st.markdown("""
         ### 4️⃣ Comprovantes
-        O upload de arquivos é **obrigatório**. Aceitamos PDF e imagens (PNG/JPG). Certifique-se de que o arquivo está legível.
-        
+        O upload de arquivos é **obrigatório**. 
         ### 5️⃣ Envio
-        Clique em **Enviar Solicitação**. O sistema notificará o responsável e você receberá o aviso de sucesso na tela.
-
+        Clique em **Enviar Solicitação**.
         ### 6️⃣ Data de Pagamento
-        Após a análise e aprovação da solicitação, o pagamento será realizado em **D+5** (cinco dias corridos após a data da análise).
+        Pagamento em **D+5** após a análise.
         """)
     
     st.markdown("---")
-    st.subheader("❓ Ainda tem dúvidas?")
-    st.write("Acesse o manual completo das políticas de viagens e reembolso no botão abaixo:")
-    
     caminho_manual = os.path.join("documentos", "manual_reembolso.pdf")
     try:
         if not os.path.exists("documentos"): os.makedirs("documentos")
         with open(caminho_manual, "rb") as f:
             st.download_button(label="📥 Baixar Manual de Reembolso (PDF)", data=f, file_name="manual_reembolso.pdf", mime="application/pdf")
-    except:
-        st.error("Arquivo 'manual_reembolso.pdf' não encontrado na pasta 'documentos'.")
+    except: pass
 
 with aba_solicitacao:
     st.title("🚀 Solicitação de Reembolso de Despesas")
     st.markdown("---")
-    
     df_base = carregar_base_funcionarios()
     lista_nomes = sorted(df_base['Nome do Funcionário'].dropna().unique().tolist()) if not df_base.empty else []
 
@@ -206,7 +192,6 @@ with aba_solicitacao:
             st.session_state.lista_categorias.append(cat_selecionada)
 
     dados_despesas = []
-
     if st.session_state.lista_categorias:
         for idx, cat in enumerate(st.session_state.lista_categorias):
             with st.container():
@@ -216,84 +201,48 @@ with aba_solicitacao:
                 if "KM (em qtde)" in cat:
                     q_km = c3.number_input("Qtde KM", min_value=0.0, step=0.1, value=None, key=f"v_{cat}_{idx}")
                     v_fin = (float(q_km) * 1.37) if q_km else 0.0
-                    if q_km: c3.info(f"R$ {v_fin:.2f}")
                 else:
                     v_fin = c3.number_input("Valor R$", min_value=0.0, step=0.01, value=None, key=f"v_{cat}_{idx}")
-                    if "REFEIÇÃO" in cat: c3.markdown("**Limite até R$ 150**")
-                    elif "ESTACIONAMENTO" in cat: c3.markdown("**Limite até R$ 70**")
                     v_fin = v_fin if v_fin else 0.0
                 mot = c4.text_input("Motivo *", key=f"m_{cat}_{idx}")
-                
                 if c5.button("🗑️", key=f"del_{idx}"):
                     st.session_state.lista_categorias.pop(idx)
                     st.rerun()
-                
                 dados_despesas.append({"Data": d_desp.strftime('%d/%m/%Y'), "Categoria": cat, "Valor Total": float(v_fin), "Motivo": mot})
         
-        st.subheader("Anexar Comprovantes")
         arq = st.file_uploader("Upload (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+        if st.button("Enviar Solicitação"):
+            if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or nome == "":
+                st.error("Preencha tudo!")
+            else:
+                st.session_state.confirmar_envio = True
 
-        col_btn1, col_btn2 = st.columns([2, 8])
-        
-        with col_btn1:
-            if st.button("Enviar Solicitação", use_container_width=True):
-                if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or nome == "":
-                    st.error("Preencha todos os campos e selecione seu nome.")
-                else:
-                    st.session_state.confirmar_envio = True
+        if st.session_state.get('confirmar_envio'):
+            if st.button("Confirmar Envio"):
+                try:
+                    caminhos_salvos = []
+                    for f in arq:
+                        caminho = os.path.join("comprovantes_servidor", f"{nome}_{f.name}")
+                        with open(caminho, "wb") as b: b.write(f.getbuffer())
+                        caminhos_salvos.append(caminho)
 
-            if st.session_state.get('confirmar_envio'):
-                st.warning("Você confirma o envio?")
-                conf_c1, conf_c2, _ = st.columns([1, 1, 8])
-                if conf_c1.button("Sim", key="conf_envio_sim"):
-                    try:
-                        caminhos_salvos = []
-                        for f in arq:
-                            caminho = os.path.join("comprovantes_servidor", f"{nome}_{f.name}")
-                            with open(caminho, "wb") as b: b.write(f.getbuffer())
-                            caminhos_salvos.append(caminho)
+                    df_p = pd.DataFrame(dados_despesas)
+                    df_p['Colaborador'] = nome
+                    df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
+                    df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
+                    df_p['SETOR'] = setor
+                    df_p['DEPARTAMENTO'] = departamento
+                    df_p['Centro de Custo'] = centro_custo
 
-                        df_p = pd.DataFrame(dados_despesas)
-                        df_p['Colaborador'] = nome
-                        df_p['Data Solicitacao'] = data_solicitacao.strftime('%d/%m/%Y')
-                        df_p['Caminhos_Anexos'] = "|".join(caminhos_salvos)
-                        df_p['SETOR'] = setor
-                        df_p['DEPARTAMENTO'] = departamento
-                        df_p['Centro de Custo'] = centro_custo
-
-                        existing = conn.read(worksheet="Pendentes").astype(str)
-                        combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
-                        conn.update(worksheet="Pendentes", data=combined)
-                        
-                        enviar_email_com_pdf(
-                            "gabriel.coelho@globusseguros.com.br", 
-                            f"Solicitação: {nome}", 
-                            f"Nova solicitação de {nome}. Verifique na aba de Aprovação através do link https://sistemareembolso.streamlit.app/",
-                            caminhos_anexos=caminhos_salvos
-                        )
-                        
-                        st.success("Enviado!")
-                        time.sleep(2)
-                        st.session_state.confirmar_envio = False
-                        reset_campos()
-                    except Exception as e: 
-                        st.error(f"Erro ao salvar: {e}")
-                if conf_c2.button("Não", key="conf_envio_nao"):
-                    st.session_state.confirmar_envio = False
-                    st.rerun()
-
-        with col_btn2:
-            if st.button("♻️ Reciclar Ciclo"):
-                st.session_state.confirmar_reset = True
-            
-            if st.session_state.get('confirmar_reset'):
-                st.error("Você realmente deseja resetar?")
-                res_c1, res_c2, _ = st.columns([1, 1, 8])
-                if res_c1.button("Sim", key="conf_reset_sim"):
+                    existing = conn.read(worksheet="Pendentes").astype(str)
+                    combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
+                    conn.update(worksheet="Pendentes", data=combined)
+                    
+                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", "Nova solicitação disponível.", caminhos_anexos=caminhos_salvos)
+                    st.success("Enviado!")
+                    time.sleep(2)
                     reset_campos()
-                if res_c2.button("Não", key="conf_reset_nao"):
-                    st.session_state.confirmar_reset = False
-                    st.rerun()
+                except Exception as e: st.error(f"Erro: {e}")
 
 with aba_aprovacao:
     st.title("🔐 Área de Verificação")
@@ -304,24 +253,14 @@ with aba_aprovacao:
                 colab_sel = st.selectbox("Escolha o colaborador:", df_pend['Colaborador'].unique())
                 dados_f = df_pend[df_pend['Colaborador'] == colab_sel]
                 
-                st.subheader("📁 Verificação de Comprovantes")
-                string_anexos = str(dados_f.iloc[0]['Caminhos_Anexos']) if 'Caminhos_Anexos' in dados_f.columns else ""
+                string_anexos = str(dados_f.iloc[0]['Caminhos_Anexos'])
                 lista_anexos = [p.strip() for p in string_anexos.split("|") if p.strip() and p.strip() != "nan"]
                 
                 if lista_anexos:
-                    c_anexos = st.columns(len(lista_anexos))
                     for i, p in enumerate(lista_anexos):
-                        p_norm = os.path.normpath(p.replace("\\", "/"))
-                        if os.path.exists(p_norm):
-                            with open(p_norm, "rb") as f_down:
-                                c_anexos[i].download_button(
-                                    label=f"📄 Anexo {i+1}", 
-                                    data=f_down, 
-                                    file_name=os.path.basename(p_norm), 
-                                    key=f"dl_{colab_sel}_{i}_{time.time()}"
-                                )
-                        else:
-                            c_anexos[i].warning("⚠️ Arquivo expirou no servidor")
+                        if os.path.exists(p):
+                            with open(p, "rb") as f_down:
+                                st.download_button(f"📄 Anexo {i+1}", f_down, os.path.basename(p), key=f"dl_{i}")
                 
                 dados_ajustados = []
                 for i, row in dados_f.iterrows():
@@ -330,54 +269,46 @@ with aba_aprovacao:
                         c1.markdown(f"**{row['Categoria']}**")
                         adj_data = c2.text_input("Data", value=row['Data'], key=f"adj_d_{i}")
                         
-                        # --- CORREÇÃO FINAL DOS VALORES ---
-                        val_str = str(row['Valor Total']).strip()
-                        
-                        # Se contiver muitos pontos (erro de milhar do sheets), removemos tudo exceto a última parte decimal
-                        if val_str.count('.') > 1:
-                            # Remove todos os pontos e trata como se fosse um número inteiro que precisa de ajuste
-                            val_str = val_str.replace('.', '')
-                            # Se o número ficou gigante, vamos dividir pela casa decimal correta (ex: 109600 -> 10.96)
-                            try:
-                                val_float = float(val_str) / 100 if len(val_str) > 4 else float(val_str)
-                            except: val_float = 0.0
+                        # --- LIMPEZA RADICAL DE VALORES (REGEX) ---
+                        val_raw = str(row['Valor Total']).replace(',', '.')
+                        # Pega apenas os números antes de uma sequência repetitiva de zeros (ou o número todo se for normal)
+                        match = re.search(r'^(\d+\.\d{1,2})', val_raw)
+                        if match:
+                            val_limpo = float(match.group(1))
                         else:
-                            # Caso normal: substitui vírgula por ponto para o Python entender
+                            # Se não encontrar o padrão, remove pontos de milhar e tenta converter
                             try:
-                                val_float = float(val_str.replace(',', '.'))
-                            except: val_float = 0.0
-                            
-                        adj_val = c3.number_input("Valor R$", value=val_float, format="%.2f", key=f"adj_v_{i}")
+                                temp = val_raw.split('.')[0] # Pega a parte inteira
+                                if len(temp) > 5: # Se tiver mais de 5 dígitos e termina em 000..., reduz
+                                    val_limpo = float(temp[:4]) / 100
+                                else:
+                                    val_limpo = float(val_raw)
+                            except: val_limpo = 0.0
+
+                        adj_val = c3.number_input("Valor R$", value=val_limpo, format="%.2f", key=f"adj_v_{i}")
                         adj_mot = c4.text_input("Motivo", value=row['Motivo'], key=f"adj_m_{i}")
                         dados_ajustados.append({"Data": adj_data, "Categoria": row['Categoria'], "Valor Total": float(adj_val), "Motivo": adj_mot})
                 
                 total_adj = sum(d["Valor Total"] for d in dados_ajustados)
                 st.metric("Total Final", f"R$ {total_adj:.2f}")
 
-                if st.button("✅ Aprovar e Enviar E-mail com Anexos"):
+                if st.button("✅ Aprovar"):
                     df_fin = pd.DataFrame(dados_ajustados)
                     df_fin['Colaborador'] = colab_sel
                     df_fin['Data Solicitacao'] = dados_f.iloc[0]['Data Solicitacao']
-                    
                     ex_of = conn.read(worksheet="Reembolsos").astype(str)
-                    new_history = pd.concat([ex_of, df_fin.astype(str)], ignore_index=True).replace("nan", "")
-                    conn.update(worksheet="Reembolsos", data=new_history)
-                    
-                    remaining_pend = df_pend[df_pend['Colaborador'] != colab_sel].astype(str).replace("nan", "")
-                    conn.update(worksheet="Pendentes", data=remaining_pend)
+                    conn.update(worksheet="Reembolsos", data=pd.concat([ex_of, df_fin.astype(str)], ignore_index=True))
+                    conn.update(worksheet="Pendentes", data=df_pend[df_pend['Colaborador'] != colab_sel].astype(str))
                     
                     pdf = gerar_pdf(colab_sel, df_fin['Data Solicitacao'].iloc[0], dados_ajustados, total_adj)
-                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório e comprovantes em anexo.", pdf, lista_anexos)
-                    st.success("Tudo enviado!")
+                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"APROVADO - {colab_sel}", "Relatório em anexo.", pdf, lista_anexos)
+                    st.success("Aprovado!")
                     time.sleep(2)
                     st.rerun()
                 
                 if st.button("❌ Reprovar"):
-                    remaining_pend = df_pend[df_pend['Colaborador'] != colab_sel].astype(str).replace("nan", "")
-                    conn.update(worksheet="Pendentes", data=remaining_pend)
+                    conn.update(worksheet="Pendentes", data=df_pend[df_pend['Colaborador'] != colab_sel].astype(str))
                     st.error("Removido.")
                     time.sleep(1)
                     st.rerun()
-            else: st.info("Sem pendências.")
-        except Exception as e: 
-            st.info("Aguardando solicitações...")
+        except Exception as e: st.info("Sem pendências.")
