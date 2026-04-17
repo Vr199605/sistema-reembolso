@@ -330,23 +330,24 @@ with aba_aprovacao:
                         c1.markdown(f"**{row['Categoria']}**")
                         adj_data = c2.text_input("Data", value=row['Data'], key=f"adj_d_{i}")
                         
-                        # --- NOVA LÓGICA DE TRATAMENTO DE VALOR ---
-                        # Pega o valor da planilha, converte para string
-                        raw_val = str(row['Valor Total'])
-                        # Remove pontos de milhar, troca vírgula por ponto
-                        clean_val = raw_val.replace('.', '').replace(',', '.')
+                        # --- CORREÇÃO FINAL DOS VALORES ---
+                        val_str = str(row['Valor Total']).strip()
                         
-                        try:
-                            # Tenta converter o valor limpo
-                            val_inicial = float(clean_val)
-                            # Se o valor for absurdamente alto (provável erro de concatenação da planilha), 
-                            # tentamos pegar apenas os primeiros dígitos antes dos zeros infinitos
-                            if val_inicial > 1000000: # Se for maior que 1 milhão, algo está errado
-                                val_inicial = float(clean_val[:5]) / 100 # Exemplo de ajuste forçado
-                        except:
-                            val_inicial = 0.0
+                        # Se contiver muitos pontos (erro de milhar do sheets), removemos tudo exceto a última parte decimal
+                        if val_str.count('.') > 1:
+                            # Remove todos os pontos e trata como se fosse um número inteiro que precisa de ajuste
+                            val_str = val_str.replace('.', '')
+                            # Se o número ficou gigante, vamos dividir pela casa decimal correta (ex: 109600 -> 10.96)
+                            try:
+                                val_float = float(val_str) / 100 if len(val_str) > 4 else float(val_str)
+                            except: val_float = 0.0
+                        else:
+                            # Caso normal: substitui vírgula por ponto para o Python entender
+                            try:
+                                val_float = float(val_str.replace(',', '.'))
+                            except: val_float = 0.0
                             
-                        adj_val = c3.number_input("Valor R$", value=val_inicial, format="%.2f", key=f"adj_v_{i}")
+                        adj_val = c3.number_input("Valor R$", value=val_float, format="%.2f", key=f"adj_v_{i}")
                         adj_mot = c4.text_input("Motivo", value=row['Motivo'], key=f"adj_m_{i}")
                         dados_ajustados.append({"Data": adj_data, "Categoria": row['Categoria'], "Valor Total": float(adj_val), "Motivo": adj_mot})
                 
