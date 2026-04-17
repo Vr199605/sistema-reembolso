@@ -177,9 +177,7 @@ with aba_solicitacao:
     st.title("🚀 Solicitação de Reembolso de Despesas")
     st.markdown("---")
     
-    # --- CARREGAR BASE PARA BUSCA INTELIGENTE ---
     df_base = carregar_base_funcionarios()
-    # CORREÇÃO DO ERRO: Filtra valores nulos (dropna) para que o sorted funcione
     lista_nomes = sorted(df_base['Nome do Funcionário'].dropna().unique().tolist()) if not df_base.empty else []
 
     col_perfil1, col_perfil2 = st.columns(2)
@@ -188,7 +186,6 @@ with aba_solicitacao:
     with col_perfil2: 
         data_solicitacao = st.date_input("Data de solicitação", format="DD/MM/YYYY", key="data_sol")
 
-    # --- IDENTIFICAÇÃO AUTOMÁTICA DOS DADOS ---
     centro_custo, setor, departamento = "", "", ""
     if nome != "":
         dados_func = df_base[df_base['Nome do Funcionário'] == nome].iloc[0]
@@ -332,13 +329,24 @@ with aba_aprovacao:
                         c1, c2, c3, c4 = st.columns([2, 2, 2, 4])
                         c1.markdown(f"**{row['Categoria']}**")
                         adj_data = c2.text_input("Data", value=row['Data'], key=f"adj_d_{i}")
-                        # CORREÇÃO CRÍTICA AQUI: Converte para float tratando possíveis erros de string da planilha
+                        
+                        # --- NOVA LÓGICA DE TRATAMENTO DE VALOR ---
+                        # Pega o valor da planilha, converte para string
+                        raw_val = str(row['Valor Total'])
+                        # Remove pontos de milhar, troca vírgula por ponto
+                        clean_val = raw_val.replace('.', '').replace(',', '.')
+                        
                         try:
-                            val_inicial = float(str(row['Valor Total']).replace(',', '.'))
+                            # Tenta converter o valor limpo
+                            val_inicial = float(clean_val)
+                            # Se o valor for absurdamente alto (provável erro de concatenação da planilha), 
+                            # tentamos pegar apenas os primeiros dígitos antes dos zeros infinitos
+                            if val_inicial > 1000000: # Se for maior que 1 milhão, algo está errado
+                                val_inicial = float(clean_val[:5]) / 100 # Exemplo de ajuste forçado
                         except:
                             val_inicial = 0.0
                             
-                        adj_val = c3.number_input("Valor R$", value=val_inicial, key=f"adj_v_{i}")
+                        adj_val = c3.number_input("Valor R$", value=val_inicial, format="%.2f", key=f"adj_v_{i}")
                         adj_mot = c4.text_input("Motivo", value=row['Motivo'], key=f"adj_m_{i}")
                         dados_ajustados.append({"Data": adj_data, "Categoria": row['Categoria'], "Valor Total": float(adj_val), "Motivo": adj_mot})
                 
