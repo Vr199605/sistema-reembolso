@@ -243,7 +243,7 @@ with aba_solicitacao:
                     combined = pd.concat([existing, df_p.astype(str)], ignore_index=True).replace("nan", "")
                     conn.update(worksheet="Pendentes", data=combined)
                     
-                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", "Nova solicitação disponível.", caminhos_anexos=caminhos_salvos)
+                    enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", "Nova solicitação disponível. Acesse o link : https://sistemareembolso.streamlit.app/", caminhos_anexos=caminhos_salvos)
                     st.success("Enviado com sucesso!")
                     time.sleep(2)
                     reset_campos()
