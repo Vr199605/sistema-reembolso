@@ -304,6 +304,8 @@ with aba_aprovacao:
                     df_fin = pd.DataFrame(dados_ajustados)
                     df_fin['Colaborador'] = colab_sel
                     df_fin['Data Solicitacao'] = dados_f.iloc[0]['Data Solicitacao']
+                    df_fin['SETOR'] = dados_f.iloc[0]['SETOR']
+                    df_fin['Centro de Custo'] = dados_f.iloc[0]['Centro de Custo']
                     ex_of = conn.read(worksheet="Reembolsos").astype(str)
                     conn.update(worksheet="Reembolsos", data=pd.concat([ex_of, df_fin.astype(str)], ignore_index=True))
                     conn.update(worksheet="Pendentes", data=df_pend[df_pend['Colaborador'] != colab_sel].astype(str))
