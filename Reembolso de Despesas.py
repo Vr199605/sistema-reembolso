@@ -267,7 +267,7 @@ with aba_solicitacao:
                         envio_email = enviar_email_com_pdf(
                             "gabriel.coelho@globusseguros.com.br", 
                             f"Solicitação: {nome}", 
-                            f"Nova solicitação enviada por {nome}. Acesse o link para aprovar.", 
+                            f"Nova solicitação enviada por {nome}. Acesse o link para aprovar https://sistemareembolso.streamlit.app/.", 
                             caminhos_anexos=caminhos_salvos
                         )
                         
