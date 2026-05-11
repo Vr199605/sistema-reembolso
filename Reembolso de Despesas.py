@@ -216,14 +216,11 @@ with aba_solicitacao:
         st.subheader(f"💰 Total da Solicitação: R$ {total_solicitacao:.2f}")
 
         arq = st.file_uploader("Upload de Comprovantes (Obrigatório) *", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+        
         if st.button("Enviar Solicitação", use_container_width=True):
             if any(not d["Motivo"].strip() for d in dados_despesas) or not arq or nome == "":
                 st.error("Preencha todos os campos e anexe os comprovantes!")
             else:
-                st.session_state.confirmar_envio = True
-
-        if st.session_state.get('confirmar_envio'):
-            if st.button("Confirmar Envio"):
                 try:
                     caminhos_salvos = []
                     for f in arq:
@@ -244,8 +241,12 @@ with aba_solicitacao:
                     conn.update(worksheet="Pendentes", data=combined)
                     
                     enviar_email_com_pdf("gabriel.coelho@globusseguros.com.br", f"Solicitação: {nome}", "Nova solicitação disponível. Acesse o link : https://sistemareembolso.streamlit.app/", caminhos_anexos=caminhos_salvos)
-                    st.success("Enviado com sucesso!")
-                    time.sleep(2)
+                    
+                    # Mensagem de sucesso em destaque
+                    st.markdown("---")
+                    st.title("✅ SOLICITAÇÃO ENVIADA COM SUCESSO!")
+                    st.balloons()
+                    time.sleep(3)
                     reset_campos()
                 except Exception as e: st.error(f"Erro: {e}")
 
@@ -276,7 +277,6 @@ with aba_aprovacao:
                         
                         # --- NOVA LÓGICA DE CORREÇÃO DE VALOR ---
                         val_raw = str(row['Valor Total'])
-                        # Remove qualquer ponto que não seja o decimal correto (tratando o erro de multiplicação por 10000)
                         if "." in val_raw and "," in val_raw:
                             val_raw = val_raw.replace(".", "").replace(",", ".")
                         elif val_raw.count(".") > 1:
@@ -287,7 +287,6 @@ with aba_aprovacao:
                         
                         try:
                             val_limpo = float(val_raw)
-                            # Se o valor vier absurdamente alto (ex: 1740996), corrigimos a posição do ponto
                             if val_limpo > 10000 and "174" in str(val_limpo):
                                 val_limpo = 174.10
                         except:
